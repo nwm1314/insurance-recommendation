@@ -139,9 +139,9 @@ export default function HomePage() {
         )}
 
         <div style={{ marginTop: 24, display: 'flex', justifyContent: 'space-between' }}>
-          <Button disabled={step === 0} onClick={() => setStep((s) => s - 1)}>上一步</Button>
+          <Button htmlType="button" disabled={step === 0} onClick={() => setStep((s) => s - 1)}>上一步</Button>
           {step < 3 ? (
-            <Button type="primary" onClick={() => setStep((s) => s + 1)}>下一步</Button>
+            <Button htmlType="button" type="primary" onClick={() => setStep((s) => s + 1)}>下一步</Button>
           ) : (
             <Button type="primary" htmlType="submit">开始推荐</Button>
           )}
