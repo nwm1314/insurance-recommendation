@@ -1,0 +1,14 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+sqlalchemy==2.0.36
+pydantic==2.10.3
+pydantic-settings==2.7.0
+apscheduler==3.11.0
+playwright==1.49.1
+beautifulsoup4==4.12.3
+instructor==1.7.0
+openai==1.58.1
+redis==5.2.1
+httpx==0.28.1
+pyyaml==6.5
+python-dotenv==1.0.1
