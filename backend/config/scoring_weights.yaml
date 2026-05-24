@@ -1,0 +1,14 @@
+weights:
+  coverage: 0.25       # 保障全面性
+  price: 0.25          # 保费竞争力
+  flexibility: 0.20    # 投保宽松度
+  waiting: 0.10        # 等待期优势
+  waiver: 0.10         # 豁免条款
+  adequacy: 0.10       # 保额充足度
+
+scoring:
+  waiting_period_best: 90     # 等待期满分阈值（天）
+  waiting_period_worst: 180   # 等待期最低分阈值（天）
+  health_disclosure_best: 3   # 健康告知最少条数（满分）
+  health_disclosure_worst: 15 # 健康告知最多条数（最低分）
+  job_class_best: 6           # 职业限制最宽松

@@ -1,0 +1,49 @@
+income_tiers:
+  - max_income: 50000
+    budget_ratio: 0.05
+    allocation:
+      medical: 0.30
+      accident: 0.30
+      critical_illness: 0.30
+      life: 0.10
+  - max_income: 150000
+    budget_ratio: 0.08
+    allocation:
+      medical: 0.15
+      accident: 0.15
+      critical_illness: 0.45
+      life: 0.25
+  - max_income: 300000
+    budget_ratio: 0.09
+    allocation:
+      medical: 0.10
+      accident: 0.10
+      critical_illness: 0.50
+      life: 0.30
+  - max_income: 999999999
+    budget_ratio: 0.10
+    allocation:
+      medical: 0.10
+      accident: 0.10
+      critical_illness: 0.45
+      life: 0.35
+
+budget_tiers:
+  - max_ratio: 0.03
+    types: [医疗险, 意外险]
+  - max_ratio: 0.05
+    types: [医疗险, 意外险, 重疾险]
+  - max_ratio: 0.08
+    types: [医疗险, 意外险, 重疾险, 定期寿险]
+  - max_ratio: 0.10
+    types: [医疗险, 意外险, 重疾险, 定期寿险, 防癌险]
+
+sum_insured:
+  medical: 3000000
+  accident_multiplier: 8
+  critical_illness_multiplier: 3
+  critical_illness_base: 300000
+  critical_illness_max: 1000000
+  life_multiplier: 5
+  life_min: 500000
+  cancer_default: 150000
