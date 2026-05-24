@@ -10,5 +10,5 @@ instructor==1.7.0
 openai==1.58.1
 redis==5.2.1
 httpx==0.28.1
-pyyaml==6.5
+pyyaml==6.0.3
 python-dotenv==1.0.1
