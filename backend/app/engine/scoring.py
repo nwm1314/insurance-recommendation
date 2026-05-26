@@ -7,14 +7,18 @@ WEIGHTS = SCORING_WEIGHTS.get("weights", {})
 SCORING = SCORING_WEIGHTS.get("scoring", {})
 
 
-def score_product(product: Product, rule: Rule, benefits: list[Benefit], suggested_sum_insured: float) -> dict:
-    """Score a single product on 6 dimensions, return total + breakdown"""
+def score_product(
+    product: Product, rule: Rule, benefits: list[Benefit],
+    suggested_sum_insured: float,
+    preferred_companies: list[str] | None = None,
+) -> dict:
+    """Score a single product on 8 dimensions, return total + breakdown"""
 
     # Coverage completeness (25%)
     coverage = _score_coverage(product, benefits)
 
-    # Price competitiveness (25%) - default max, recalculated in pool
-    price = WEIGHTS.get("price", 0.25) * 100
+    # Price competitiveness (18%) - default max, recalculated in pool
+    price = WEIGHTS.get("price", 0.18) * 100
 
     # Underwriting flexibility (20%)
     flexibility = _score_flexibility(rule)
@@ -28,6 +32,17 @@ def score_product(product: Product, rule: Rule, benefits: list[Benefit], suggest
     # Sum insured adequacy (10%)
     adequacy = _score_adequacy(product, suggested_sum_insured)
 
+    # Brand trust (10%)
+    brand = _score_brand(product)
+
+    # Value-added services (5%)
+    service = _score_service(product, benefits)
+
+    # Company preference bonus: +5% weight bonus for preferred companies
+    pref_bonus = 0.0
+    if preferred_companies and product.company in preferred_companies:
+        pref_bonus = WEIGHTS.get("company_preference_bonus", 0.05) * 100
+
     detail = {
         "coverage": coverage,
         "price": price,
@@ -35,8 +50,10 @@ def score_product(product: Product, rule: Rule, benefits: list[Benefit], suggest
         "waiting": waiting,
         "adequacy": adequacy,
         "waiver": waiver,
+        "brand": brand,
+        "service": service,
     }
-    total = sum(detail.values())
+    total = sum(detail.values()) + pref_bonus
     detail["total"] = total
     return detail
 
@@ -116,8 +133,29 @@ def _score_adequacy(product: Product, suggested: float) -> float:
     w = WEIGHTS.get("adequacy", 0.10)
     if not suggested or not product.sum_insured_max:
         return round(w * 80, 1)
-    ratio = min(product.sum_insured_max / suggested, 1.5)
+    # sum_insured_max is stored in 万, suggested is in 元
+    si_max_yuan = product.sum_insured_max * 10000
+    ratio = min(si_max_yuan / suggested, 1.5)
     score = min(100, ratio * 100)
+    return round((score / 100) * w * 100, 1)
+
+
+def _score_brand(product: Product) -> float:
+    """Brand trust based on company tier"""
+    w = WEIGHTS.get("brand", 0.10)
+    tier_map = SCORING_WEIGHTS.get("company_tier_brand", {1: 85, 2: 75, 3: 65})
+    tier = getattr(product, "company_tier", 2)
+    brand_score = tier_map.get(tier, 75)
+    return round((brand_score / 100) * w * 100, 1)
+
+
+def _score_service(product: Product, benefits: list[Benefit]) -> float:
+    """Value-added services: green channel, second opinion, drug delivery, etc."""
+    w = WEIGHTS.get("service", 0.07)
+    special_count = len([b for b in benefits if b.benefit_type in ("special", "waiver")])
+    tier = getattr(product, "company_tier", 2)
+    tier_bonus = {1: 35, 2: 50, 3: 25}.get(tier, 35)
+    score = min(100, tier_bonus + special_count * 15)
     return round((score / 100) * w * 100, 1)
 
 
@@ -127,7 +165,7 @@ def apply_price_scoring(scored_products: list[dict]) -> list[dict]:
         return scored_products
     premiums = [p.get("premium", 0) for p in scored_products]
     min_p, max_p = min(premiums), max(premiums)
-    w = WEIGHTS.get("price", 0.25)
+    w = WEIGHTS.get("price", 0.18)
     for p in scored_products:
         premium = p.get("premium", 0)
         if max_p > min_p:

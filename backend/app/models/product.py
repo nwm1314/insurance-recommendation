@@ -27,6 +27,7 @@ class Product(Base):
     has_mild_coverage: Mapped[bool] = mapped_column(Boolean, default=False)
     has_moderate_coverage: Mapped[bool] = mapped_column(Boolean, default=False)
     has_multi_claim: Mapped[bool] = mapped_column(Boolean, default=False)
+    company_tier: Mapped[int] = mapped_column(Integer, default=2)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

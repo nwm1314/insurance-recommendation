@@ -1,5 +1,57 @@
 from backend.app.engine.models import UserProfile, ScoredProduct, ComboPackage, BudgetAnalysis
 from backend.app.engine.rule_engine import get_allowed_types
+from backend.app.config import SCORING_WEIGHTS
+
+# Insurance type to layer mapping
+LAYER_MAP = {
+    "医疗险": "basic", "意外险": "basic",
+    "重疾险": "core", "定期寿险": "core",
+    "防癌险": "supplement", "年金险": "supplement",
+}
+
+# Package definitions: tag → (label, budget_multiplier, sort_strategy)
+# - "cheapest": sort by premium ascending, pick lowest price
+# - "best_score": sort by raw score descending (with tier preference bonus)
+PACKAGE_DEFS = [
+    ("budget", "🛡 极致性价比", 0.5, "cheapest"),
+    ("star", "⭐ 全面保障", 0.8, "best_score"),
+    ("premium", "👑 尊享无忧", 1.0, "best_score"),
+]
+
+
+def _get_tier_preference(user: UserProfile) -> dict[int, float]:
+    """Calculate company tier weight multipliers based on user profile.
+    Returns {tier: weight_multiplier} where 1.0 is neutral.
+    These are small tiebreaker weights, not dominant factors."""
+    prefs = {1: 1.0, 2: 1.0, 3: 1.0}
+    tier_cfg = SCORING_WEIGHTS.get("user_tier_preference", {})
+
+    # Company preference: give a substantial bonus to preferred companies
+    if user.preferred_companies:
+        for tier in [1, 2, 3]:
+            prefs[tier] += 0.08
+
+    # Income: high earners prefer T1 (brand trust)
+    if user.annual_income >= tier_cfg.get("high_income_threshold", 300000):
+        prefs[int(tier_cfg.get("high_income_tier", 1))] += 0.03
+
+    # Health issues: prefer T2 (flexible underwriting)
+    if user.health_status != "standard" and user.health_issues:
+        prefs[int(tier_cfg.get("health_issue_tier", 2))] += 0.05
+
+    # Budget sensitive: prefer T3 (affordability)
+    if user.budget_ratio <= tier_cfg.get("budget_threshold", 0.06):
+        prefs[int(tier_cfg.get("budget_tier", 3))] += 0.03
+
+    # Age: young users prefer T3 (internet-native), older prefer T1/T2
+    if user.age < tier_cfg.get("age_young_threshold", 30):
+        prefs[int(tier_cfg.get("age_young_tier", 3))] += 0.03
+    elif user.age > tier_cfg.get("age_senior_threshold", 45):
+        senior_tier = int(tier_cfg.get("age_senior_tier", 1))
+        prefs[senior_tier] += 0.03
+        prefs[2] += 0.03  # T2 also gets preference for older users
+
+    return prefs
 
 
 def build_combos(
@@ -7,29 +59,22 @@ def build_combos(
     user: UserProfile,
     budget: BudgetAnalysis,
 ) -> list[ComboPackage]:
-    """Greedy algorithm to build 3 packages"""
     allowed_types = get_allowed_types(user)
+
+    # Group products by type, with a copy for each package to avoid mutation
     products_by_type: dict[str, list[dict]] = {}
     for p in scored_products:
         ptype = p.get("type", "")
         if ptype not in products_by_type:
             products_by_type[ptype] = []
         products_by_type[ptype].append(p)
-    for plist in products_by_type.values():
-        plist.sort(key=lambda x: x.get("score", 0), reverse=True)
 
     combos = []
-
-    # Package 1: Budget
-    combos.append(_build_single_combo(products_by_type, allowed_types, budget, "budget", "🛡 极致性价比", user))
-
-    # Package 2: Star
-    combos.append(_build_single_combo(products_by_type, allowed_types, budget, "star", "⭐ 全面保障", user))
-
-    # Package 3: Premium
-    combos.append(_build_single_combo(products_by_type, allowed_types, budget, "premium", "👑 尊享无忧", user))
-
-    return [c for c in combos if c.products]
+    for tag, label, budget_mult, strategy in PACKAGE_DEFS:
+        combo = _build_single_combo(products_by_type, allowed_types, budget, tag, label, strategy, user)
+        if combo.products:
+            combos.append(combo)
+    return combos
 
 
 def _build_single_combo(
@@ -38,33 +83,85 @@ def _build_single_combo(
     budget: BudgetAnalysis,
     tag: str,
     label: str,
+    strategy: str,
     user: UserProfile,
 ) -> ComboPackage:
-    """Greedy selection: pick highest-scored product per type, within budget"""
-    budget_mult = {"budget": 0.5, "star": 0.8, "premium": 1.0}
-    max_spend = budget.total_budget * budget_mult.get(tag, 0.8)
+    max_spend = budget.total_budget * {
+        "budget": 0.5, "star": 0.8, "premium": 1.0,
+    }.get(tag, 0.8)
+
+    # Sort a fresh copy per type based on strategy, with tier preference bonus
+    tier_prefs = _get_tier_preference(user)
+    preferred = set(user.preferred_companies) if user.preferred_companies else set()
+    sorted_pools: dict[str, list[dict]] = {}
+    for ins_type, plist in products_by_type.items():
+        copied = list(plist)
+        if strategy == "cheapest":
+            copied.sort(key=lambda x: x.get("premium", float("inf")))
+        elif strategy == "best_value":
+            copied.sort(key=lambda x: x.get("score", 0) / max(x.get("premium", 1), 1), reverse=True)
+        else:  # best_score: apply tier preference + company preference as score multiplier
+            def tier_adjusted_score(p):
+                base = p.get("score", 0)
+                tier = p.get("company_tier", 2)
+                bonus = tier_prefs.get(tier, 1.0)
+                # Extra bump for explicitly preferred companies
+                if preferred and p.get("company", "") in preferred:
+                    bonus += 0.12
+                return base * bonus
+            copied.sort(key=tier_adjusted_score, reverse=True)
+        sorted_pools[ins_type] = copied
+
+    # Build type_order dynamically based on allowed_types and package tier
+    core_types = ["医疗险", "意外险"]
+    critical_types = ["重疾险"]  # primary critical illness
+    fallback_critical = "防癌险"  # secondary (age 56+ replacement)
+    life_types = ["定期寿险"]
+
+    type_order: list[str] = []
+
+    # Always include core types if allowed
+    for t in core_types:
+        if t in allowed_types:
+            type_order.append(t)
+
+    # Critical illness: use primary if allowed, else fallback
+    has_critical = any(t in allowed_types for t in critical_types)
+    if has_critical:
+        type_order.extend(t for t in critical_types if t in allowed_types)
+    elif fallback_critical in allowed_types:
+        type_order.append(fallback_critical)
+
+    # Life insurance: budget skips, star/premium adds
+    if tag != "budget":
+        type_order.extend(t for t in life_types if t in allowed_types)
+
+    # Premium: also add supplementary types
+    if tag == "premium":
+        for t in [fallback_critical]:
+            if t in allowed_types and t not in type_order:
+                type_order.append(t)
 
     scored_list: list[ScoredProduct] = []
-    layer_map = {
-        "医疗险": "basic", "意外险": "basic",
-        "重疾险": "core", "定期寿险": "core",
-        "防癌险": "supplement", "年金险": "supplement",
-    }
-
     total = 0.0
-    type_order = ["医疗险", "意外险", "重疾险", "定期寿险", "防癌险"]
+    picked_ids: set[int] = set()
 
     for ins_type in type_order:
         if ins_type not in allowed_types:
             continue
-        candidates = products_by_type.get(ins_type, [])
-        if not candidates:
+        candidates = sorted_pools.get(ins_type, [])
+        # Skip already-picked products (for types with only 1 product shared across)
+        available = [c for c in candidates if c.get("product_id") not in picked_ids]
+        if not available:
             continue
-        best = candidates[0]
+
+        best = available[0]
         premium = best.get("premium", 0) or 0
         if total + premium > max_spend:
             continue
+
         total += premium
+        picked_ids.add(best.get("product_id", 0))
         scored_list.append(ScoredProduct(
             product_id=best.get("product_id", 0),
             name=best.get("name", ""),
@@ -73,11 +170,41 @@ def _build_single_combo(
             premium=premium,
             sum_insured=best.get("sum_insured", 0),
             source_url=best.get("source_url", ""),
-            layer=layer_map.get(ins_type, "core"),
+            layer=LAYER_MAP.get(ins_type, "core"),
             score=best.get("score", 0),
             score_detail=best.get("score_detail", {}),
             risk_warnings=best.get("risk_warnings", []),
         ))
+
+    ratio = total / budget.annual_income if budget.annual_income > 0 else 0
+
+    # Premium: add second-best products within remaining budget for extra coverage
+    if tag == "premium":
+        for ins_type in type_order:
+            if ins_type not in allowed_types:
+                continue
+            candidates = sorted_pools.get(ins_type, [])
+            remaining = [c for c in candidates if c.get("product_id") not in picked_ids]
+            if not remaining:
+                continue
+            extra = remaining[0]
+            extra_premium = extra.get("premium", 0) or 0
+            if total + extra_premium <= max_spend:
+                total += extra_premium
+                picked_ids.add(extra.get("product_id", 0))
+                scored_list.append(ScoredProduct(
+                    product_id=extra.get("product_id", 0),
+                    name=extra.get("name", ""),
+                    company=extra.get("company", ""),
+                    type=ins_type,
+                    premium=extra_premium,
+                    sum_insured=extra.get("sum_insured", 0),
+                    source_url=extra.get("source_url", ""),
+                    layer="supplement",
+                    score=extra.get("score", 0),
+                    score_detail=extra.get("score_detail", {}),
+                    risk_warnings=extra.get("risk_warnings", []),
+                ))
 
     ratio = total / budget.annual_income if budget.annual_income > 0 else 0
     return ComboPackage(

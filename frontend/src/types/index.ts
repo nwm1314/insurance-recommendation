@@ -10,6 +10,7 @@ export interface UserProfile {
   existing_coverage: string[];
   budget_ratio: number;
   preferred_type?: string;
+  preferred_companies: string[];
   enable_llm_engine: boolean;
 }
 

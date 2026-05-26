@@ -1,10 +1,13 @@
 weights:
-  coverage: 0.25       # 保障全面性
-  price: 0.25          # 保费竞争力
-  flexibility: 0.20    # 投保宽松度
+  coverage: 0.20       # 保障全面性
+  price: 0.18          # 保费竞争力
+  flexibility: 0.15    # 投保宽松度
   waiting: 0.10        # 等待期优势
   waiver: 0.10         # 豁免条款
   adequacy: 0.10       # 保额充足度
+  brand: 0.10          # 品牌信任度
+  service: 0.07        # 增值服务
+  company_preference_bonus: 0.05  # 用户偏好公司额外加分权重
 
 scoring:
   waiting_period_best: 90     # 等待期满分阈值（天）
@@ -12,3 +15,32 @@ scoring:
   health_disclosure_best: 3   # 健康告知最少条数（满分）
   health_disclosure_worst: 15 # 健康告知最多条数（最低分）
   job_class_best: 6           # 职业限制最宽松
+
+# 公司梯队 → 品牌信任评分映射
+# 所有持牌险企均受监管严格约束，梯次差距不宜过大
+company_tier_brand:
+  1: 85    # 老牌大厂，线下网点密布、偿付能力强、品牌认知最高
+  2: 75    # 优质合资/特色险企，外资背景风控成熟、服务口碑好
+  3: 65    # 互联网持牌险企，监管合规、年轻群体认可度高
+
+# 公司梯队 → 核保宽松度映射
+company_tier_underwriting:
+  1: 45    # 老牌大厂，核保标准严格，但大额保费客户有协商空间
+  2: 80    # 优质合资，智能核保+人工复核双通道，结节/乙肝/轻度三高友好
+  3: 65    # 互联网险企，线上智能核保秒级响应，但规则刚性无人工协商
+
+# 用户画像 → 公司梯队偏好（加权倾向，非硬筛选）
+user_tier_preference:
+  # 高收入 + 品牌敏感 → 偏好梯队1
+  high_income_tier: 1
+  high_income_threshold: 300000
+  # 健康异常 → 偏好梯队2（核保灵活）
+  health_issue_tier: 2
+  # budget敏感 → 偏好梯队3（性价比）
+  budget_tier: 3
+  budget_threshold: 0.06
+  # 年龄维度 → 梯队偏好
+  age_young_tier: 3          # <30岁，互联网品牌接受度高
+  age_young_threshold: 30
+  age_senior_tier: 1         # >45岁，信任线下网点
+  age_senior_threshold: 45

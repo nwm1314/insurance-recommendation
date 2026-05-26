@@ -14,4 +14,5 @@ class UserProfileRequest(BaseModel):
     existing_coverage: list[str] = Field(default_factory=list, description="已有保障")
     budget_ratio: float = Field(default=0.08, ge=0.03, le=0.10, description="预算占比")
     preferred_type: Optional[str] = Field(default=None, description="指定险种偏好")
+    preferred_companies: list[str] = Field(default_factory=list, description="偏好保险公司")
     enable_llm_engine: bool = Field(default=False, description="是否启用 AI 模式")

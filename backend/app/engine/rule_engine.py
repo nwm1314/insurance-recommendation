@@ -31,7 +31,9 @@ def get_allowed_types(user: UserProfile) -> set[str]:
     for ins_type, rule in TYPE_MATRIX.get(age_group, {}).items():
         if rule == "forbidden":
             continue
-        if rule in ("required", "optional") and ins_type in budget_tier:
+        if rule == "required":
+            allowed.add(ins_type)  # always include required types
+        elif rule == "optional" and ins_type in budget_tier:
             allowed.add(ins_type)
     return allowed
 

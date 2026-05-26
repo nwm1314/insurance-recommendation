@@ -15,6 +15,7 @@ class UserProfile:
     existing_coverage: list[str] = field(default_factory=list)
     budget_ratio: float = 0.08
     preferred_type: Optional[str] = None
+    preferred_companies: list[str] = field(default_factory=list)
     enable_llm_engine: bool = False
 
 

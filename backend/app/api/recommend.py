@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from backend.app.database import get_db
 from backend.app.schemas.user_profile import UserProfileRequest
-from backend.app.engine.models import UserProfile
+from backend.app.engine.models import UserProfile, ScoredProduct
 from backend.app.engine.rule_engine import filter_candidate_pool
 from backend.app.engine.scoring import score_product, apply_price_scoring
 from backend.app.engine.budget import calculate_budget, calculate_sum_insured
@@ -38,7 +38,7 @@ def _run_rule_engine(db: Session, user: UserProfile) -> dict:
         rule = product.rules
         benefits = product.benefits
         suggested_si = si_map.get(product.type, 500000)
-        detail = score_product(product, rule, benefits, suggested_si)
+        detail = score_product(product, rule, benefits, suggested_si, user.preferred_companies)
         risk_warnings = _check_health_warnings(user, rule, product)
         scored.append({
             "product_id": product.id,
@@ -51,6 +51,7 @@ def _run_rule_engine(db: Session, user: UserProfile) -> dict:
             "score": detail["total"],
             "score_detail": {k: v for k, v in detail.items() if k != "total"},
             "risk_warnings": risk_warnings,
+            "company_tier": getattr(product, "company_tier", 2),
         })
 
     # Step 4: Recalculate price scoring
@@ -88,21 +89,42 @@ def recommend(request: UserProfileRequest, db: Session = Depends(get_db)):
         existing_coverage=request.existing_coverage,
         budget_ratio=request.budget_ratio,
         preferred_type=request.preferred_type,
+        preferred_companies=request.preferred_companies,
         enable_llm_engine=request.enable_llm_engine,
     )
 
     result = _run_rule_engine(db, user)
 
     if not request.enable_llm_engine:
-        # Fast rule mode
         return _build_response(user, result, engine_mode="rule")
 
-    # AI mode: return SSE stream
-    return StreamingResponse(
-        _sse_recommend_stream(user, result),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
-    )
+    # AI mode: call LLM synchronously, return JSON with narrative
+    from backend.app.config import settings
+    if not settings.llm_api_key:
+        response = _build_response(user, result, engine_mode="degraded")
+        response["llm_narrative"] = "AI 模式需要配置 LLM API Key（请在 .env 中设置 llm_api_key）。当前展示为极速规则模式推荐结果。"
+        return response
+
+    # Send package products (what user actually sees) to AI, not all candidates
+    packages = result.get("packages", [])
+    package_products: list[ScoredProduct] = []
+    if packages:
+        # Use the star (middle) package as primary recommendation context
+        star_pkg = packages[1] if len(packages) > 1 else packages[0]
+        package_products = list(star_pkg.products)
+
+    from backend.app.engine.ai_engine import ai_rerank_sync
+    narrative = ai_rerank_sync(user, package_products, packages)
+
+    if narrative:
+        response = _build_response(user, result, engine_mode="ai")
+        response["llm_narrative"] = narrative
+    else:
+        response = _build_response(user, result, engine_mode="degraded")
+        response["llm_narrative"] = get_fallback_narrative(
+            result["packages"][0].products if result["packages"] else []
+        )
+    return response
 
 
 async def _sse_recommend_stream(user: UserProfile, result: dict):
@@ -112,7 +134,23 @@ async def _sse_recommend_stream(user: UserProfile, result: dict):
     base["llm_narrative"] = ""
     yield f"data: {json.dumps(base, ensure_ascii=False)}\n\n"
 
-    scored_products = result.get("scored", [])
+    scored_dicts = result.get("scored", [])
+    scored_products = [
+        ScoredProduct(
+            product_id=p.get("product_id", 0),
+            name=p.get("name", ""),
+            company=p.get("company", ""),
+            type=p.get("type", ""),
+            premium=p.get("premium", 0),
+            sum_insured=p.get("sum_insured", 0),
+            source_url=p.get("source_url", ""),
+            layer=p.get("layer", "core"),
+            score=p.get("score", 0),
+            score_detail=p.get("score_detail", {}),
+            risk_warnings=p.get("risk_warnings", []),
+        )
+        for p in scored_dicts
+    ]
     ai_gen, mode = await ai_rerank_or_fallback(user, scored_products)
 
     if mode == "degraded" or ai_gen is None:

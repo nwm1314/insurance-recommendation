@@ -5,5 +5,8 @@ node_modules/
 dist/
 .env
 backend/data/
+data/
 .claude/
 *.tsbuildinfo
+*.png
+.playwright-mcp/

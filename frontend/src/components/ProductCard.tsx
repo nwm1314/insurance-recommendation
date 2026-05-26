@@ -12,9 +12,9 @@ const LAYER_COLORS: Record<string, string> = {
 };
 
 const LAYER_LABELS: Record<string, string> = {
-  basic: '基础层',
-  core: '核心层',
-  supplement: '补充层',
+  basic: '基础层（必配）',
+  core: '核心层（建议）',
+  supplement: '补充层（按需）',
 };
 
 interface Props {
@@ -22,32 +22,46 @@ interface Props {
 }
 
 export default function ProductCard({ product }: Props) {
+  const scoreColor = product.score >= 80 ? '#52c41a' : product.score >= 60 ? '#faad14' : '#ff4d4f';
+
   return (
     <Card
       size="small"
+      style={{ marginBottom: 12 }}
       title={
         <span>
           {product.source_url ? (
-            <a href={product.source_url} target="_blank" rel="noopener noreferrer">
+            <a href={product.source_url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 500 }}>
               {product.name}
             </a>
           ) : (
-            product.name
+            <Text strong>{product.name}</Text>
           )}
-          <Tag color={LAYER_COLORS[product.layer]} style={{ marginLeft: 8 }}>
+          <Tag color={LAYER_COLORS[product.layer]} style={{ marginLeft: 8, fontSize: 11 }}>
             {LAYER_LABELS[product.layer]}
           </Tag>
         </span>
       }
       extra={<RiskBadge warnings={product.risk_warnings} />}
     >
-      <Text type="secondary">{product.company} · {product.type}</Text>
-      <div style={{ marginTop: 8 }}>
-        <Text strong>¥{product.premium.toLocaleString()}/年</Text>
-        <Text style={{ marginLeft: 16 }}>保额 {product.sum_insured.toLocaleString()}</Text>
-        <Tag color="orange" style={{ marginLeft: 8 }}>评分 {product.score}</Tag>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <Text type="secondary">{product.company} · {product.type}</Text>
+        <span>
+          <Text style={{ fontSize: 13 }}>年保费 </Text>
+          <Text strong style={{ fontSize: 15, color: '#1677ff' }}>¥{product.premium.toLocaleString()}</Text>
+        </span>
+        <span>
+          <Text style={{ fontSize: 13 }}>保额 </Text>
+          <Text strong>{product.sum_insured > 0 ? `${product.sum_insured}万` : '-'}</Text>
+        </span>
+        <span>
+          <Text style={{ fontSize: 13 }}>综合评分 </Text>
+          <span style={{ fontWeight: 700, fontSize: 15, color: scoreColor }}>
+            {product.score.toFixed(0)}<span style={{ fontSize: 10, color: '#999' }}>/100</span>
+          </span>
+        </span>
       </div>
-      <div style={{ marginTop: 8 }}>
+      <div style={{ marginTop: 10 }}>
         <ScoreRadar detail={product.score_detail} />
       </div>
     </Card>
