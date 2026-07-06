@@ -5,17 +5,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-WORKDIR /app
+WORKDIR /srv
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt \
+COPY backend/requirements.txt backend/requirements.txt
+RUN pip install -r backend/requirements.txt \
     && playwright install --with-deps chromium
 
-COPY . .
+COPY backend backend
+
+WORKDIR /srv/backend
 
 EXPOSE 8000
 
