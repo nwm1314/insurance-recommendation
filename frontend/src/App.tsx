@@ -1,17 +1,38 @@
+import { useEffect, useState } from 'react';
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import { Layout, Menu, Typography } from 'antd';
-import { HomeOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons';
+import { HomeOutlined, LoginOutlined, SearchOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
 import HomePage from './pages/HomePage';
 import ResultPage from './pages/ResultPage';
 import AdminPage from './pages/AdminPage';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import AccountPage from './pages/AccountPage';
+import ProtectedRoute from './components/ProtectedRoute';
+import { getStoredUser } from './api/auth';
 
 const { Header, Content, Footer } = Layout;
 
 export default function App() {
   const location = useLocation();
+  const [user, setUser] = useState(() => getStoredUser());
+  const canUseAdmin = Boolean(user?.permissions.includes('crawl:read'));
+
+  useEffect(() => {
+    const syncUser = () => setUser(getStoredUser());
+    window.addEventListener('auth-changed', syncUser);
+    window.addEventListener('storage', syncUser);
+    return () => {
+      window.removeEventListener('auth-changed', syncUser);
+      window.removeEventListener('storage', syncUser);
+    };
+  }, []);
+
   const selectedKey = location.pathname === '/' ? 'home'
     : location.pathname === '/result' ? 'result'
     : location.pathname === '/admin' ? 'admin'
+    : location.pathname === '/account' ? 'account'
+    : location.pathname === '/login' || location.pathname === '/register' ? 'login'
     : 'home';
 
   return (
@@ -32,15 +53,20 @@ export default function App() {
           items={[
             { key: 'home', icon: <HomeOutlined />, label: <Link to="/">填写问卷</Link> },
             { key: 'result', icon: <SearchOutlined />, label: <Link to="/result">推荐结果</Link> },
-            { key: 'admin', icon: <SettingOutlined />, label: <Link to="/admin">管理后台</Link> },
-          ]}
+            user ? { key: 'account', icon: <UserOutlined />, label: <Link to="/account">我的账号</Link> } : null,
+            canUseAdmin ? { key: 'admin', icon: <SettingOutlined />, label: <Link to="/admin">管理后台</Link> } : null,
+            user ? null : { key: 'login', icon: <LoginOutlined />, label: <Link to="/login">登录/注册</Link> },
+          ].filter(Boolean)}
         />
       </Header>
       <Content style={{ padding: '24px', maxWidth: 1040, margin: '0 auto', width: '100%' }}>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/result" element={<ResultPage />} />
-          <Route path="/admin" element={<AdminPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/account" element={<ProtectedRoute><AccountPage /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute permission="crawl:read"><AdminPage /></ProtectedRoute>} />
         </Routes>
       </Content>
       <Footer style={{ textAlign: 'center', color: '#999', fontSize: 12, padding: '12px' }}>

@@ -21,6 +21,8 @@ export interface ScoreDetail {
   waiting: number;
   adequacy: number;
   waiver: number;
+  brand: number;
+  service: number;
 }
 
 export interface ProductItem {
@@ -35,6 +37,8 @@ export interface ProductItem {
   score: number;
   score_detail: ScoreDetail;
   risk_warnings: RiskWarning[];
+  recommendation_reasons: string[];
+  not_recommended_reasons: string[];
 }
 
 export interface RiskWarning {
@@ -48,6 +52,9 @@ export interface ComboPackage {
   tag_label: string;
   total_premium: number;
   budget_ratio: number;
+  budget_utilization: number;
+  completeness_score: number;
+  coverage_gap_notes: string[];
   products: ProductItem[];
 }
 
@@ -56,17 +63,40 @@ export interface RecommendationResult {
   budget_analysis: {
     annual_income: number;
     total_budget: number;
-    allocation: { medical: number; accident: number; critical_illness: number; life: number };
+    allocation: { medical: number; accident: number; critical_illness: number; life: number; cancer: number };
   };
   sum_insured_advice: {
     medical: number;
     accident: number;
     critical_illness: number;
     life: number;
+    cancer: number;
   };
   packages: ComboPackage[];
   llm_narrative: string | null;
+  ai_explanation: {
+    selected_product_ids: number[];
+    summary: string;
+    reasoning: string[];
+    risk_notes: string[];
+    comparison_notes: string[];
+  } | null;
   engine_mode: string;
+  hard_rule_summary: string[];
+  coverage_gap_summary: string[];
+  not_recommended_summary: Array<{
+    reason_code: string;
+    reason: string;
+    count: number;
+    examples: Array<{ product_id: number; name: string; type: string }>;
+  }>;
+  not_recommended_details: Array<{
+    product_id: number | null;
+    name: string | null;
+    type: string | null;
+    reason_code: string;
+    reason: string;
+  }>;
   disclaimer: string;
 }
 
@@ -79,4 +109,34 @@ export interface ProductInfo {
   premium_min: number;
   premium_max: number;
   sum_insured_max: number;
+}
+
+export interface AuthUser {
+  id: number;
+  email: string;
+  full_name: string | null;
+  roles: string[];
+  permissions: string[];
+}
+
+export interface AuthSession {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  user: AuthUser;
+}
+
+export interface RecommendationRecord {
+  id: number;
+  profile: Record<string, unknown>;
+  result: RecommendationResult;
+  created_at: string | null;
+}
+
+export interface SavedProfile {
+  id: number;
+  name: string;
+  profile: Record<string, unknown>;
+  note: string | null;
+  created_at: string | null;
 }

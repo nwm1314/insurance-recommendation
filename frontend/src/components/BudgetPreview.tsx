@@ -5,7 +5,7 @@ const { Text } = Typography;
 interface Props {
   annualIncome: number;
   totalBudget: number;
-  allocation: { medical: number; accident: number; critical_illness: number; life: number };
+  allocation: { medical: number; accident: number; critical_illness: number; life: number; cancer: number };
 }
 
 const ALLOCATION_ITEMS = [
@@ -13,6 +13,7 @@ const ALLOCATION_ITEMS = [
   { key: 'accident' as const, label: '意外险', color: '#52c41a', note: '杠杆·意外身故/伤残' },
   { key: 'critical_illness' as const, label: '重疾险', color: '#faad14', note: '核心·弥补大病收入损失' },
   { key: 'life' as const, label: '定期寿险', color: '#722ed1', note: '责任·家庭支柱身故保障' },
+  { key: 'cancer' as const, label: '防癌险', color: '#eb2f96', note: '补充·高龄或健康异常兜底' },
 ];
 
 export default function BudgetPreview({ annualIncome, totalBudget, allocation }: Props) {

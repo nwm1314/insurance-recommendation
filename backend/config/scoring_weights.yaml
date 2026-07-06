@@ -9,6 +9,53 @@ weights:
   service: 0.07        # 增值服务
   company_preference_bonus: 0.05  # 用户偏好公司额外加分权重
 
+type_weights:
+  医疗险:
+    coverage: 0.24
+    price: 0.16
+    flexibility: 0.18
+    waiting: 0.08
+    adequacy: 0.14
+    waiver: 0.04
+    brand: 0.08
+    service: 0.08
+  重疾险:
+    coverage: 0.24
+    price: 0.18
+    flexibility: 0.14
+    waiting: 0.08
+    adequacy: 0.14
+    waiver: 0.10
+    brand: 0.08
+    service: 0.04
+  意外险:
+    coverage: 0.20
+    price: 0.22
+    flexibility: 0.16
+    waiting: 0.04
+    adequacy: 0.20
+    waiver: 0.02
+    brand: 0.08
+    service: 0.08
+  定期寿险:
+    coverage: 0.16
+    price: 0.24
+    flexibility: 0.18
+    waiting: 0.08
+    adequacy: 0.18
+    waiver: 0.04
+    brand: 0.08
+    service: 0.04
+  防癌险:
+    coverage: 0.22
+    price: 0.16
+    flexibility: 0.20
+    waiting: 0.08
+    adequacy: 0.16
+    waiver: 0.04
+    brand: 0.08
+    service: 0.06
+
 scoring:
   waiting_period_best: 90     # 等待期满分阈值（天）
   waiting_period_worst: 180   # 等待期最低分阈值（天）

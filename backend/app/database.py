@@ -28,4 +28,27 @@ def init_db():
     from backend.app.models.rule import Rule  # noqa
     from backend.app.models.benefit import Benefit  # noqa
     from backend.app.models.page_log import PageLog  # noqa
+    from backend.app.models.auth import (  # noqa
+        AuditLog,
+        Permission,
+        RecommendationRecord,
+        RefreshToken,
+        Role,
+        RolePermission,
+        SavedProfile,
+        User,
+        UserRole,
+    )
+    from backend.app.models.data_ingestion import (  # noqa
+        CrawlJob,
+        CrawlRun,
+        ExtractionRun,
+        ProductDraft,
+        ProductFieldEvidence,
+        ProductReviewTask,
+        ProductVersion,
+        RawDocument,
+        SourcePage,
+        SourcePlatform,
+    )
     Base.metadata.create_all(bind=engine)

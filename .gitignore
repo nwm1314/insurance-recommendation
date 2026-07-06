@@ -2,8 +2,14 @@
 __pycache__/
 *.pyc
 node_modules/
+venv/
+backend/venv/
 dist/
 .env
+*.log
+*.db
+*.sqlite
+*.sqlite3
 backend/data/
 data/
 .claude/

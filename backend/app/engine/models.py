@@ -32,6 +32,8 @@ class ScoredProduct:
     score: float = 0.0
     score_detail: dict[str, float] = field(default_factory=dict)
     risk_warnings: list[dict] = field(default_factory=list)
+    recommendation_reasons: list[str] = field(default_factory=list)
+    not_recommended_reasons: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -40,6 +42,9 @@ class ComboPackage:
     tag_label: str
     total_premium: float
     budget_ratio: float
+    budget_utilization: float = 0.0
+    completeness_score: float = 0.0
+    coverage_gap_notes: list[str] = field(default_factory=list)
     products: list[ScoredProduct] = field(default_factory=list)
 
 

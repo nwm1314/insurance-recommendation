@@ -13,9 +13,13 @@ export function fetchRecommendSSE(
   onError: (err: Error) => void,
 ): AbortController {
   const controller = new AbortController();
+  const token = localStorage.getItem('access_token');
   fetch('/api/recommend', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify(userProfile),
     signal: controller.signal,
   })

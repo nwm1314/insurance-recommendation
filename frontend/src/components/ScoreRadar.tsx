@@ -11,13 +11,11 @@ const DIMENSIONS: { key: keyof ScoreDetail; label: string; maxScore: number; not
   { key: 'waiting', label: '等待期', maxScore: 10, note: '≤90天满分' },
   { key: 'waiver', label: '豁免条款', maxScore: 10, note: '被保人/投保人豁免' },
   { key: 'adequacy', label: '保额充足度', maxScore: 10, note: '保额÷建议保额' },
+  { key: 'brand', label: '品牌', maxScore: 10, note: '公司梯队：T1=85/T2=75/T3=65' },
+  { key: 'service', label: '服务', maxScore: 7, note: '就医绿通/二次诊疗/特药配送' },
 ];
 
 export default function ScoreRadar({ detail }: Props) {
-  const extra = detail as unknown as Record<string, number>;
-  const brandScore = extra['brand'];
-  const serviceScore = extra['service'];
-
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 12px', fontSize: 12, lineHeight: '20px' }}>
       {DIMENSIONS.map((d) => {
@@ -32,20 +30,6 @@ export default function ScoreRadar({ detail }: Props) {
           </span>
         );
       })}
-      {brandScore != null && (
-        <span title="公司梯队：T1=85/T2=75/T3=65" style={{ cursor: 'help' }}>
-          品牌
-          <span style={{ fontWeight: 600, color: '#1677ff', margin: '0 2px' }}>{brandScore.toFixed(0)}</span>
-          <span style={{ color: '#bbb', fontSize: 10 }}>/ 10</span>
-        </span>
-      )}
-      {serviceScore != null && (
-        <span title="就医绿通/二次诊疗/特药配送" style={{ cursor: 'help' }}>
-          服务
-          <span style={{ fontWeight: 600, color: '#1677ff', margin: '0 2px' }}>{serviceScore.toFixed(0)}</span>
-          <span style={{ color: '#bbb', fontSize: 10 }}>/ 7</span>
-        </span>
-      )}
     </div>
   );
 }

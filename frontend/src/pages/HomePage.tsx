@@ -138,6 +138,11 @@ const COMPANY_OPTIONS: CompanyOption[] = [
 
 const TIER_COLORS: Record<number, string> = { 1: 'blue', 2: 'purple', 3: 'orange' };
 const TIER_LABELS: Record<number, string> = { 1: '老牌大厂', 2: '合资险企', 3: '互联网/高性价比' };
+const STEP_FIELDS = [
+  ['age', 'gender', 'life_stage', 'family_burden'],
+  ['job_class', 'existing_coverage'],
+  ['health_status', 'health_issues'],
+] as const;
 
 // Map user-facing brand to DB company names (includes subsidiaries)
 const BRAND_TO_DB_COMPANIES: Record<string, string[]> = {
@@ -186,6 +191,15 @@ export default function HomePage() {
       navigate('/result', { state: { profile } });
     } catch {
       // Validation failed — Ant Design will show field errors
+    }
+  };
+
+  const handleNext = async () => {
+    try {
+      await form.validateFields([...STEP_FIELDS[step]]);
+      setStep((s) => s + 1);
+    } catch {
+      // Validation failed, field-level messages are displayed by Ant Design.
     }
   };
 
@@ -406,7 +420,7 @@ export default function HomePage() {
             <Button
               htmlType="button"
               type="primary"
-              onClick={() => setStep((s) => s + 1)}
+              onClick={handleNext}
             >下一步</Button>
           ) : (
             <Button type="primary" size="large" onClick={handleSubmit}>开始推荐</Button>

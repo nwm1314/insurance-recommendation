@@ -82,14 +82,29 @@ export default function CompareTable({ products }: Props) {
       render: (v: number) => <ScoreCell value={v} maxScore={15} tooltip={COLUMN_HELP.flexibility} />,
     },
     {
-      title: <Tooltip title={COLUMN_HELP.waiver}><span>等待期 <InfoCircleOutlined style={{ fontSize: 11, color: '#999' }}/></span></Tooltip>,
+      title: <Tooltip title={COLUMN_HELP.waiting}><span>等待期 <InfoCircleOutlined style={{ fontSize: 11, color: '#999' }}/></span></Tooltip>,
       dataIndex: ['score_detail', 'waiting'], key: 'waiting', width: 85,
       render: (v: number) => <ScoreCell value={v} maxScore={10} tooltip={COLUMN_HELP.waiting} />,
     },
     {
-      title: <Tooltip title={COLUMN_HELP.adequacy}><span>豁免条款 <InfoCircleOutlined style={{ fontSize: 11, color: '#999' }}/></span></Tooltip>,
+      title: <Tooltip title={COLUMN_HELP.waiver}><span>豁免条款 <InfoCircleOutlined style={{ fontSize: 11, color: '#999' }}/></span></Tooltip>,
       dataIndex: ['score_detail', 'waiver'], key: 'waiver', width: 85,
       render: (v: number) => <ScoreCell value={v} maxScore={10} tooltip={COLUMN_HELP.waiver} />,
+    },
+    {
+      title: <Tooltip title={COLUMN_HELP.adequacy}><span>保额充足 <InfoCircleOutlined style={{ fontSize: 11, color: '#999' }}/></span></Tooltip>,
+      dataIndex: ['score_detail', 'adequacy'], key: 'adequacy', width: 90,
+      render: (v: number) => <ScoreCell value={v} maxScore={10} tooltip={COLUMN_HELP.adequacy} />,
+    },
+    {
+      title: <Tooltip title={COLUMN_HELP.brand}><span>品牌 <InfoCircleOutlined style={{ fontSize: 11, color: '#999' }}/></span></Tooltip>,
+      dataIndex: ['score_detail', 'brand'], key: 'brand', width: 80,
+      render: (v: number) => <ScoreCell value={v} maxScore={10} tooltip={COLUMN_HELP.brand} />,
+    },
+    {
+      title: <Tooltip title={COLUMN_HELP.service}><span>服务 <InfoCircleOutlined style={{ fontSize: 11, color: '#999' }}/></span></Tooltip>,
+      dataIndex: ['score_detail', 'service'], key: 'service', width: 80,
+      render: (v: number) => <ScoreCell value={v} maxScore={7} tooltip={COLUMN_HELP.service} />,
     },
   ];
 
@@ -98,7 +113,7 @@ export default function CompareTable({ products }: Props) {
       columns={columns}
       dataSource={products}
       rowKey="id"
-      scroll={{ x: 1100 }}
+      scroll={{ x: 1350 }}
       pagination={false}
       size="small"
       bordered

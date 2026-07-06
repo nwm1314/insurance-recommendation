@@ -1,67 +1,65 @@
-from typing import AsyncGenerator
-from openai import AsyncOpenAI, OpenAI
+import json
+from openai import OpenAI
+from pydantic import BaseModel, Field, ValidationError
 from backend.app.config import settings
 from backend.app.engine.models import UserProfile, ScoredProduct
 
-SYSTEM_PROMPT = """你是一位资深保险精算师和家庭财务规划顾问。根据推荐系统为用户匹配的保险产品套餐，撰写约 200 字的个性化推荐理由。
+STRUCTURED_SYSTEM_PROMPT = """你是一位保险推荐解释助手。你只能解释系统已经选出的产品，不得新增、替换或选择候选池外产品。
+
+请严格输出 JSON 对象：
+{
+  "selected_product_ids": [1, 2],
+  "summary": "100字以内方案摘要",
+  "reasoning": ["理由1", "理由2"],
+  "risk_notes": ["风险提示1"],
+  "comparison_notes": ["对比说明1"]
+}
 
 要求：
-1. 推荐语要有人情味，体现对用户家庭情况的关怀
-2. 紧扣套餐中列出的具体产品进行说明（从保障全面性、性价比、投保宽松度角度），不要提及套餐外的产品
-3. 若有健康异常，友好提醒核保注意事项
-4. 直接输出纯文本推荐语，不要输出 JSON 格式"""
+1. selected_product_ids 只能来自输入产品 ID。
+2. 不得承诺收益、保证承保或诱导隐瞒健康告知。
+3. 不得输出 JSON 以外的内容。"""
 
 
-async def ai_rerank(
-    user: UserProfile,
-    scored_products: list[ScoredProduct],
-) -> AsyncGenerator[str, None]:
-    """LLM reranking with SSE streaming output of recommendation text"""
-    products_text = _build_products_text(scored_products)
-    user_text = _build_user_text(user)
+class AIRecommendationExplanation(BaseModel):
+    selected_product_ids: list[int] = Field(default_factory=list)
+    summary: str = ""
+    reasoning: list[str] = Field(default_factory=list)
+    risk_notes: list[str] = Field(default_factory=list)
+    comparison_notes: list[str] = Field(default_factory=list)
 
-    client = AsyncOpenAI(
-        api_key=settings.llm_api_key,
-        base_url=settings.llm_base_url,
-        timeout=settings.llm_read_timeout,
-    )
 
+def validate_ai_output(raw_content: str, allowed_product_ids: set[int]) -> AIRecommendationExplanation | None:
     try:
-        stream = await client.chat.completions.create(
-            model=settings.llm_model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_text + "\n候选产品池：\n" + products_text},
-            ],
-            stream=True,
-            timeout=settings.llm_read_timeout,
-        )
-        async for chunk in stream:
-            content = chunk.choices[0].delta.content
-            if content:
-                yield content
-    except Exception as e:
-        yield f'{{"error": "{str(e)}"}}'
+        data = json.loads(raw_content)
+        parsed = AIRecommendationExplanation.model_validate(data)
+    except (json.JSONDecodeError, ValidationError, TypeError):
+        return None
+
+    if any(product_id not in allowed_product_ids for product_id in parsed.selected_product_ids):
+        return None
+    return parsed
 
 
-async def ai_rerank_or_fallback(
-    user: UserProfile,
-    scored_products: list[ScoredProduct],
-) -> tuple[AsyncGenerator[str, None] | None, str]:
-    """Wrap AI call, return None on exception to trigger fallback"""
-    try:
-        gen = ai_rerank(user, scored_products)
-        return gen, "ai"
-    except Exception:
-        return None, "degraded"
+def render_ai_explanation(explanation: AIRecommendationExplanation) -> str:
+    parts = []
+    if explanation.summary:
+        parts.append(explanation.summary)
+    if explanation.reasoning:
+        parts.append("推荐理由：" + "；".join(explanation.reasoning))
+    if explanation.comparison_notes:
+        parts.append("对比说明：" + "；".join(explanation.comparison_notes))
+    if explanation.risk_notes:
+        parts.append("注意事项：" + "；".join(explanation.risk_notes))
+    return "\n".join(parts).strip()
 
 
 def ai_rerank_sync(
     user: UserProfile,
     package_products: list[ScoredProduct],
     packages: list | None = None,
-) -> str | None:
-    """Synchronous AI call — generates narrative based on the actual package products.
+) -> tuple[str, AIRecommendationExplanation | None] | None:
+    """Synchronous AI call that returns validated structured explanation.
     Returns None if AI is unavailable or fails."""
     if not settings.llm_api_key:
         return None
@@ -83,19 +81,26 @@ def ai_rerank_sync(
         response = client.chat.completions.create(
             model=settings.llm_model,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": STRUCTURED_SYSTEM_PROMPT},
                 {"role": "user", "content": user_text + "\n推荐套餐方案：\n" + packages_text + "\n套餐包含产品：\n" + products_text},
             ],
+            response_format={"type": "json_object"},
             timeout=settings.llm_read_timeout,
         )
-        return response.choices[0].message.content or ""
+        content = response.choices[0].message.content or ""
+        allowed_ids = {product.product_id for product in package_products}
+        parsed = validate_ai_output(content, allowed_ids)
+        if parsed is None:
+            return None
+        narrative = render_ai_explanation(parsed)
+        return narrative, parsed
     except Exception:
         return None
 
 
 def _build_products_text(scored_products: list[ScoredProduct]) -> str:
     return "\n".join([
-        f"- {p.name}（{p.type}）：保费 {p.premium}/年，保额 {p.sum_insured} 万，评分 {p.score}，公司 {p.company}"
+        f"- ID {p.product_id}: {p.name}（{p.type}）：保费 {p.premium}/年，保额 {p.sum_insured} 万，评分 {p.score}，公司 {p.company}"
         for p in scored_products
     ])
 

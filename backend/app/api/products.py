@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from backend.app.database import get_db
 from backend.app.services.product_service import list_products, get_product_with_details, compare_products
@@ -29,7 +29,7 @@ def api_list_products(
 def api_product_detail(product_id: int, db: Session = Depends(get_db)):
     detail = get_product_with_details(db, product_id)
     if not detail:
-        return {"error": "产品不存在"}, 404
+        raise HTTPException(status_code=404, detail="产品不存在")
     p = detail["product"]
     r = detail["rule"]
     return {

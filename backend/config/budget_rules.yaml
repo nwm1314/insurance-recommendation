@@ -4,29 +4,33 @@ income_tiers:
     allocation:
       medical: 0.30
       accident: 0.30
-      critical_illness: 0.30
+      critical_illness: 0.25
       life: 0.10
+      cancer: 0.05
   - max_income: 150000
     budget_ratio: 0.08
     allocation:
       medical: 0.15
       accident: 0.15
-      critical_illness: 0.45
+      critical_illness: 0.40
       life: 0.25
+      cancer: 0.05
   - max_income: 300000
     budget_ratio: 0.09
     allocation:
       medical: 0.10
       accident: 0.10
-      critical_illness: 0.50
+      critical_illness: 0.45
       life: 0.30
+      cancer: 0.05
   - max_income: 999999999
     budget_ratio: 0.10
     allocation:
       medical: 0.10
       accident: 0.10
-      critical_illness: 0.45
+      critical_illness: 0.40
       life: 0.35
+      cancer: 0.05
 
 budget_tiers:
   - max_ratio: 0.03

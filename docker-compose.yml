@@ -2,8 +2,6 @@ version: '3.8'
 services:
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     restart: unless-stopped
 
   backend:
@@ -16,6 +14,10 @@ services:
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_BASE_URL=${LLM_BASE_URL:-https://api.openai.com/v1}
       - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
+      - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-http://localhost,http://localhost:3000,http://127.0.0.1:3000}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change_me_before_deploy}
+      - FIRST_ADMIN_EMAIL=${FIRST_ADMIN_EMAIL:-admin@example.com}
+      - FIRST_ADMIN_PASSWORD=${FIRST_ADMIN_PASSWORD}
     volumes:
       - ./backend/data:/app/data
       - ./backend/config:/app/config

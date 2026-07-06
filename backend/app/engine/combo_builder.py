@@ -177,6 +177,11 @@ def _build_single_combo(
         ))
 
     ratio = total / budget.annual_income if budget.annual_income > 0 else 0
+    covered_types = {p.type for p in scored_list}
+    required_types = _required_types_for_package(allowed_types, tag)
+    missing_types = [t for t in required_types if t not in covered_types]
+    completeness = 1.0 if not required_types else (len(required_types) - len(missing_types)) / len(required_types)
+    budget_utilization = total / max(max_spend, 1)
 
     # Premium: add second-best products within remaining budget for extra coverage
     if tag == "premium":
@@ -207,10 +212,28 @@ def _build_single_combo(
                 ))
 
     ratio = total / budget.annual_income if budget.annual_income > 0 else 0
+    covered_types = {p.type for p in scored_list}
+    missing_types = [t for t in required_types if t not in covered_types]
+    completeness = 1.0 if not required_types else (len(required_types) - len(missing_types)) / len(required_types)
+    budget_utilization = total / max(max_spend, 1)
     return ComboPackage(
         tag=tag,
         tag_label=label,
         total_premium=round(total, 2),
         budget_ratio=round(ratio, 4),
+        budget_utilization=round(min(budget_utilization, 1.0), 4),
+        completeness_score=round(max(completeness, 0.0), 4),
+        coverage_gap_notes=[f"预算或候选池限制，暂未配置{t}" for t in missing_types],
         products=scored_list,
     )
+
+
+def _required_types_for_package(allowed_types: set[str], tag: str) -> list[str]:
+    required = [t for t in ["医疗险", "意外险"] if t in allowed_types]
+    if "重疾险" in allowed_types:
+        required.append("重疾险")
+    elif "防癌险" in allowed_types:
+        required.append("防癌险")
+    if tag != "budget" and "定期寿险" in allowed_types:
+        required.append("定期寿险")
+    return required

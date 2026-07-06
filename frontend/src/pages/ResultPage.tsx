@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Card, Tabs, Typography, Spin, Tag, Row, Col, Button, Result, Space, Divider } from 'antd';
+import { Alert, Card, Tabs, Typography, Spin, Tag, Row, Col, Button, Result, Space, Divider, Progress, Collapse, Table } from 'antd';
 import { ReloadOutlined, EditOutlined } from '@ant-design/icons';
 import BudgetPreview from '../components/BudgetPreview';
 import ProductCard from '../components/ProductCard';
@@ -69,6 +69,15 @@ export default function ResultPage() {
   ).values()];
 
   const engineModeLabel = result.engine_mode === 'ai' ? 'AI 专家模式' : result.engine_mode === 'degraded' ? '降级模式（AI 繁忙，已自动切换）' : '极速规则模式';
+  const reasonCodeLabel = (code: string) => ({
+    inactive: '停售',
+    type_forbidden: '硬规则禁推',
+    type_not_in_plan: '不在方案层级',
+    age_not_allowed: '年龄不符',
+    job_class_not_allowed: '职业不符',
+    over_budget: '预算不足',
+    unknown: '其他',
+  }[code] || code);
 
   return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 16px' }}>
@@ -102,8 +111,9 @@ export default function ResultPage() {
                 { label: '意外险', value: result.sum_insured_advice.accident, note: '年收入×8~10倍' },
                 { label: '重疾险', value: result.sum_insured_advice.critical_illness, note: '年收入×3+30万基准' },
                 { label: '定期寿险', value: result.sum_insured_advice.life, note: '年收入×5+负债估算' },
+                { label: '防癌险', value: result.sum_insured_advice.cancer, note: '高龄/健康异常替代保障' },
               ].map((item) => (
-                <Col span={12} key={item.label}>
+                <Col span={8} key={item.label}>
                   <div style={{ marginBottom: 8 }}>
                     <Text type="secondary" style={{ fontSize: 11 }}>{item.label}</Text>
                     <div style={{ fontWeight: 700, fontSize: 17, color: '#1677ff' }}>
@@ -124,6 +134,97 @@ export default function ResultPage() {
         </Card>
       )}
 
+      {result.ai_explanation && (
+        <Card title="AI 结构化解释" size="small" style={{ marginTop: 16 }}>
+          {result.ai_explanation.summary && <Paragraph>{result.ai_explanation.summary}</Paragraph>}
+          <Row gutter={12}>
+            {result.ai_explanation.reasoning.length > 0 && (
+              <Col xs={24} md={8}>
+                <Text strong>推荐理由</Text>
+                <ul style={{ paddingLeft: 18, marginBottom: 0 }}>
+                  {result.ai_explanation.reasoning.map((item) => <li key={item}>{item}</li>)}
+                </ul>
+              </Col>
+            )}
+            {result.ai_explanation.comparison_notes.length > 0 && (
+              <Col xs={24} md={8}>
+                <Text strong>对比说明</Text>
+                <ul style={{ paddingLeft: 18, marginBottom: 0 }}>
+                  {result.ai_explanation.comparison_notes.map((item) => <li key={item}>{item}</li>)}
+                </ul>
+              </Col>
+            )}
+            {result.ai_explanation.risk_notes.length > 0 && (
+              <Col xs={24} md={8}>
+                <Text strong>注意事项</Text>
+                <ul style={{ paddingLeft: 18, marginBottom: 0 }}>
+                  {result.ai_explanation.risk_notes.map((item) => <li key={item}>{item}</li>)}
+                </ul>
+              </Col>
+            )}
+          </Row>
+        </Card>
+      )}
+
+      {(result.hard_rule_summary.length > 0 || result.coverage_gap_summary.length > 0 || result.not_recommended_summary.length > 0) && (
+        <Card title="推荐解释" size="small" style={{ marginTop: 16 }}>
+          {result.hard_rule_summary.length > 0 && (
+            <Alert
+              type="success"
+              showIcon
+              message="硬性规则已先执行"
+              description={result.hard_rule_summary.join('；')}
+              style={{ marginBottom: 12 }}
+            />
+          )}
+          {result.coverage_gap_summary.length > 0 && (
+            <Alert
+              type="warning"
+              showIcon
+              message="保障缺口提示"
+              description={result.coverage_gap_summary.join('；')}
+              style={{ marginBottom: result.not_recommended_summary.length > 0 ? 12 : 0 }}
+            />
+          )}
+          {result.not_recommended_summary.length > 0 && (
+            <>
+              <Alert
+                type="info"
+                showIcon
+                message="未推荐原因"
+                description={result.not_recommended_summary.map((item) => `${reasonCodeLabel(item.reason_code)}：${item.count}款`).join('；')}
+                style={{ marginBottom: result.not_recommended_details.length > 0 ? 12 : 0 }}
+              />
+              {result.not_recommended_details.length > 0 && (
+                <Collapse
+                  size="small"
+                  items={[
+                    {
+                      key: 'not-recommended-details',
+                      label: `查看未推荐产品明细（最多展示 ${result.not_recommended_details.length} 款）`,
+                      children: (
+                        <Table
+                          size="small"
+                          rowKey={(row) => `${row.product_id}-${row.name}`}
+                          pagination={false}
+                          dataSource={result.not_recommended_details}
+                          columns={[
+                            { title: '产品', dataIndex: 'name', key: 'name' },
+                            { title: '险种', dataIndex: 'type', key: 'type', width: 100 },
+                            { title: '原因类型', dataIndex: 'reason_code', key: 'reason_code', width: 120, render: (code: string) => reasonCodeLabel(code) },
+                            { title: '未推荐原因', dataIndex: 'reason', key: 'reason' },
+                          ]}
+                        />
+                      ),
+                    },
+                  ]}
+                />
+              )}
+            </>
+          )}
+        </Card>
+      )}
+
       <Tabs
         style={{ marginTop: 16 }}
         items={result.packages.map((pkg) => ({
@@ -131,8 +232,37 @@ export default function ResultPage() {
           label: `${pkg.tag_label} (¥${pkg.total_premium.toLocaleString()}/年)`,
           children: (
             <div>
+              <Card size="small" style={{ marginBottom: 12 }}>
+                <Row gutter={16} align="middle">
+                  <Col xs={24} sm={8}>
+                    <Text type="secondary">预算利用率</Text>
+                    <Progress percent={Math.round(pkg.budget_utilization * 100)} size="small" />
+                  </Col>
+                  <Col xs={24} sm={8}>
+                    <Text type="secondary">方案完整度</Text>
+                    <Progress percent={Math.round(pkg.completeness_score * 100)} size="small" status={pkg.completeness_score >= 0.8 ? 'success' : 'active'} />
+                  </Col>
+                  <Col xs={24} sm={8}>
+                    {pkg.coverage_gap_notes.length > 0 ? (
+                      <Text type="warning">{pkg.coverage_gap_notes.join('；')}</Text>
+                    ) : (
+                      <Text type="success">当前方案主要保障层配置完整</Text>
+                    )}
+                  </Col>
+                </Row>
+              </Card>
               {pkg.products.map((p) => (
-                <ProductCard key={p.id} product={p} />
+                <div key={p.id}>
+                  <ProductCard product={p} />
+                  {p.recommendation_reasons.length > 0 && (
+                    <Card size="small" style={{ margin: '-8px 0 12px' }}>
+                      <Text type="secondary">推荐理由：</Text>
+                      <Space wrap style={{ marginLeft: 8 }}>
+                        {p.recommendation_reasons.map((reason) => <Tag key={reason} color="blue">{reason}</Tag>)}
+                      </Space>
+                    </Card>
+                  )}
+                </div>
               ))}
             </div>
           ),

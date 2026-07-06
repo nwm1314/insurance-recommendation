@@ -2,6 +2,17 @@ from backend.app.engine.models import UserProfile, BudgetAnalysis, SumInsuredAdv
 from backend.app.config import BUDGET_RULES
 
 
+DEFAULT_ALLOCATION = {"medical": 0.15, "accident": 0.15, "critical_illness": 0.40, "life": 0.25, "cancer": 0.05}
+
+
+def _normalize_allocation(allocation: dict) -> dict[str, float]:
+    normalized = {**DEFAULT_ALLOCATION, **(allocation or {})}
+    total = sum(normalized.values())
+    if total <= 0:
+        return DEFAULT_ALLOCATION
+    return {key: round(value / total, 4) for key, value in normalized.items()}
+
+
 def calculate_budget(user: UserProfile) -> BudgetAnalysis:
     """Calculate total budget and allocation by income tier"""
     income = user.annual_income
@@ -12,13 +23,13 @@ def calculate_budget(user: UserProfile) -> BudgetAnalysis:
             return BudgetAnalysis(
                 annual_income=income,
                 total_budget=round(total_budget, 2),
-                allocation=tier["allocation"],
+                allocation=_normalize_allocation(tier["allocation"]),
             )
     # fallback
     return BudgetAnalysis(
         annual_income=income,
         total_budget=round(income * 0.08, 2),
-        allocation={"medical": 0.15, "accident": 0.15, "critical_illness": 0.45, "life": 0.25},
+        allocation=DEFAULT_ALLOCATION,
     )
 
 

@@ -9,6 +9,8 @@ class ScoreDetail(BaseModel):
     waiting: float = 0
     adequacy: float = 0
     waiver: float = 0
+    brand: float = 0
+    service: float = 0
 
 
 class ProductItem(BaseModel):
@@ -23,6 +25,8 @@ class ProductItem(BaseModel):
     score: float
     score_detail: ScoreDetail
     risk_warnings: list[dict] = []
+    recommendation_reasons: list[str] = []
+    not_recommended_reasons: list[str] = []
 
 
 class Allocation(BaseModel):
@@ -30,6 +34,7 @@ class Allocation(BaseModel):
     accident: float
     critical_illness: float
     life: float
+    cancer: float = 0
 
 
 class BudgetAnalysisResponse(BaseModel):
@@ -43,6 +48,7 @@ class SumInsuredAdviceResponse(BaseModel):
     accident: float
     critical_illness: float
     life: float
+    cancer: float = 0
 
 
 class ComboPackageResponse(BaseModel):
@@ -50,7 +56,33 @@ class ComboPackageResponse(BaseModel):
     tag_label: str
     total_premium: float
     budget_ratio: float
+    budget_utilization: float = 0
+    completeness_score: float = 0
+    coverage_gap_notes: list[str] = []
     products: list[ProductItem]
+
+
+class NotRecommendedSummary(BaseModel):
+    reason_code: str = "unknown"
+    reason: str
+    count: int
+    examples: list[dict] = []
+
+
+class NotRecommendedDetail(BaseModel):
+    product_id: int | None = None
+    name: str | None = None
+    type: str | None = None
+    reason_code: str = "unknown"
+    reason: str
+
+
+class AIExplanationResponse(BaseModel):
+    selected_product_ids: list[int] = []
+    summary: str = ""
+    reasoning: list[str] = []
+    risk_notes: list[str] = []
+    comparison_notes: list[str] = []
 
 
 class RecommendationResponse(BaseModel):
@@ -59,5 +91,10 @@ class RecommendationResponse(BaseModel):
     sum_insured_advice: SumInsuredAdviceResponse
     packages: list[ComboPackageResponse] = []
     llm_narrative: Optional[str] = None
+    ai_explanation: Optional[AIExplanationResponse] = None
     engine_mode: str = "rule"
+    hard_rule_summary: list[str] = []
+    coverage_gap_summary: list[str] = []
+    not_recommended_summary: list[NotRecommendedSummary] = []
+    not_recommended_details: list[NotRecommendedDetail] = []
     disclaimer: str = "本方案由算法生成，仅供参考，最终承保以保险公司官方条款为准"
