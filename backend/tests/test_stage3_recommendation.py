@@ -22,6 +22,7 @@ from backend.app.engine.budget import calculate_budget
 from backend.app.engine.budget import calculate_sum_insured
 from backend.app.engine.combo_builder import build_combos
 from backend.app.engine.models import BudgetAnalysis, UserProfile
+from backend.app.engine.models import ScoredProduct
 from backend.app.engine.rule_engine import filter_candidate_pool_with_reasons, get_allowed_types
 from backend.app.engine.scoring import DEFAULT_TYPE_WEIGHTS, _type_weights, validate_scoring_weights_on_startup, validate_type_weights
 from backend.app.models.benefit import Benefit
@@ -296,7 +297,6 @@ def test_ai_mode_degrades_to_rule_when_llm_unavailable(client, monkeypatch):
 
 
 def test_ai_mode_without_api_key_degrades_with_clear_narrative(client, monkeypatch):
-    import backend.app.api.recommend as recommend_api
     from backend.app.config import settings
 
     _seed_products()
@@ -308,6 +308,138 @@ def test_ai_mode_without_api_key_degrades_with_clear_narrative(client, monkeypat
     data = response.json()
     assert data["engine_mode"] == "degraded"
     assert "LLM API Key" in data["llm_narrative"]
+
+
+def test_ai_rerank_disables_deepseek_thinking_and_retries_empty_content(monkeypatch):
+    import backend.app.engine.ai_engine as ai_engine
+    from backend.app.config import settings
+
+    class Message:
+        def __init__(self, content):
+            self.content = content
+
+    class Response:
+        def __init__(self, content):
+            self.choices = [type("Choice", (), {"message": Message(content)})()]
+
+    class Completions:
+        def __init__(self):
+            self.calls = []
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            return Response(
+                "" if len(self.calls) == 1 else
+                '{"selected_product_ids":[1],"summary":"重试成功","reasoning":["匹配"],"risk_notes":[],"comparison_notes":[]}'
+            )
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.init_kwargs = kwargs
+            self.chat = type("Chat", (), {"completions": Completions()})()
+
+    clients = []
+
+    def fake_openai(**kwargs):
+        client_instance = FakeClient(**kwargs)
+        clients.append(client_instance)
+        return client_instance
+
+    monkeypatch.setattr(ai_engine, "OpenAI", fake_openai)
+    monkeypatch.setattr(settings, "llm_api_key", "test-key")
+    monkeypatch.setattr(settings, "llm_base_url", "https://api.deepseek.com/v1")
+    monkeypatch.setattr(settings, "llm_model", "deepseek-v4-flash")
+    monkeypatch.setattr(settings, "llm_max_tokens", 2048)
+    monkeypatch.setattr(settings, "llm_max_retries", 3)
+
+    product = ScoredProduct(
+        product_id=1,
+        name="测试产品",
+        company="测试公司",
+        type="医疗险",
+        premium=500,
+        sum_insured=300,
+    )
+    result = ai_engine.ai_rerank_sync(
+        UserProfile(age=30, gender="male", annual_income=200000, job_class=2, life_stage="single", family_burden="none", health_status="standard"),
+        [product],
+    )
+
+    assert result is not None
+    assert result[0] == "重试成功\n推荐理由：匹配"
+    assert clients[0].init_kwargs["max_retries"] == 3
+    assert len(clients[0].chat.completions.calls) == 2
+    for call in clients[0].chat.completions.calls:
+        assert call["max_tokens"] == 2048
+        assert call["extra_body"] == {"thinking": {"type": "disabled"}}
+
+
+def test_ai_rerank_retries_without_unsupported_json_response_format(monkeypatch):
+    import backend.app.engine.ai_engine as ai_engine
+    from backend.app.config import settings
+
+    class UnsupportedJsonError(Exception):
+        status_code = 400
+
+    class Message:
+        content = '{"selected_product_ids":[1],"summary":"兼容网关","reasoning":[],"risk_notes":[],"comparison_notes":[]}'
+
+    class Completions:
+        def __init__(self):
+            self.calls = []
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            if len(self.calls) == 1:
+                raise UnsupportedJsonError("response_format json_object is unsupported")
+            return type("Response", (), {"choices": [type("Choice", (), {"message": Message()})()]})()
+
+    completions = Completions()
+    fake_client = type("Client", (), {"chat": type("Chat", (), {"completions": completions})()})()
+    monkeypatch.setattr(ai_engine, "OpenAI", lambda **kwargs: fake_client)
+    monkeypatch.setattr(settings, "llm_api_key", "test-key")
+    monkeypatch.setattr(settings, "llm_base_url", "https://example.test/v1")
+    monkeypatch.setattr(settings, "llm_model", "compatible-model")
+
+    product = ScoredProduct(
+        product_id=1,
+        name="测试产品",
+        company="测试公司",
+        type="医疗险",
+        premium=500,
+        sum_insured=300,
+    )
+    result = ai_engine.ai_rerank_sync(
+        UserProfile(age=30, gender="male", annual_income=200000, job_class=2, life_stage="single", family_burden="none", health_status="standard"),
+        [product],
+    )
+
+    assert result is not None
+    assert len(completions.calls) == 2
+    assert "response_format" in completions.calls[0]
+    assert "response_format" not in completions.calls[1]
+
+
+def test_ai_rerank_catches_client_initialization_failure(monkeypatch):
+    import backend.app.engine.ai_engine as ai_engine
+    from backend.app.config import settings
+
+    monkeypatch.setattr(settings, "llm_api_key", "test-key")
+    monkeypatch.setattr(settings, "llm_model", "compatible-model")
+    monkeypatch.setattr(ai_engine, "OpenAI", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("bad config")))
+
+    product = ScoredProduct(
+        product_id=1,
+        name="测试产品",
+        company="测试公司",
+        type="医疗险",
+        premium=500,
+        sum_insured=300,
+    )
+    assert ai_engine.ai_rerank_sync(
+        UserProfile(age=30, gender="male", annual_income=200000, job_class=2, life_stage="single", family_burden="none", health_status="standard"),
+        [product],
+    ) is None
 
 
 def test_seed_products_if_empty_is_idempotent():

@@ -45,8 +45,9 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY is required (fill it in .env, otherwise AI 专家模式 silently degrades to rule mode)}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com/v1}
       LLM_MODEL: ${LLM_MODEL:-deepseek-v4-flash}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-2048}
       LLM_CONNECT_TIMEOUT: ${LLM_CONNECT_TIMEOUT:-3.0}
-      LLM_READ_TIMEOUT: ${LLM_READ_TIMEOUT:-30.0}
+      LLM_READ_TIMEOUT: ${LLM_READ_TIMEOUT:-90.0}
       RATE_LIMIT_IP_PER_MINUTE: ${RATE_LIMIT_IP_PER_MINUTE:-120}
       RATE_LIMIT_USER_PER_MINUTE: ${RATE_LIMIT_USER_PER_MINUTE:-30}
       RATE_LIMIT_USER_PER_DAY: ${RATE_LIMIT_USER_PER_DAY:-300}
@@ -68,7 +69,9 @@ services:
     build:
       context: ./frontend
     ports:
-      - "${FRONTEND_BIND:-127.0.0.1}:${FRONTEND_PORT:-18080}:80"
+      # Keep the published edge loopback-only; the Agent policy must be able
+      # to prove the host binding without evaluating environment interpolation.
+      - "127.0.0.1:${FRONTEND_PORT:-18080}:80"
     depends_on:
       backend:
         condition: service_healthy

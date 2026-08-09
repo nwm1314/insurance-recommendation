@@ -53,7 +53,6 @@ cp .env.example .env
 
 ```env
 COMPOSE_PROJECT_NAME=insurance_staging
-FRONTEND_BIND=127.0.0.1
 FRONTEND_PORT=18080
 POSTGRES_DB=insurance_staging
 POSTGRES_USER=insurance
@@ -65,7 +64,7 @@ JWT_SECRET_KEY=替换为强随机字符串
 FIRST_ADMIN_EMAIL=admin-staging@example.com
 FIRST_ADMIN_PASSWORD=首次部署临时密码
 SCORING_WEIGHTS_FAIL_FAST=true
-LLM_API_KEY=
+LLM_API_KEY=填写测试环境 LLM Key
 ```
 
 构建并启动基础服务：
@@ -74,7 +73,7 @@ LLM_API_KEY=
 docker compose build
 docker compose up -d postgres redis
 docker compose run --rm backend alembic -c alembic.ini upgrade head
-docker compose up -d
+docker compose up -d --build
 docker compose ps
 ```
 
@@ -95,7 +94,7 @@ git checkout develop
 git pull origin develop
 docker compose build
 docker compose run --rm backend alembic -c alembic.ini upgrade head
-docker compose up -d
+docker compose up -d --build
 docker compose ps
 ```
 
@@ -116,7 +115,6 @@ cp .env.example .env
 
 ```env
 COMPOSE_PROJECT_NAME=insurance_prod
-FRONTEND_BIND=127.0.0.1
 FRONTEND_PORT=18081
 POSTGRES_DB=insurance_prod
 POSTGRES_USER=insurance
@@ -139,7 +137,7 @@ LLM_MODEL=deepseek-v4-flash
 docker compose build
 docker compose up -d postgres redis
 docker compose run --rm backend alembic -c alembic.ini upgrade head
-docker compose up -d
+docker compose up -d --build
 ```
 
 ## 宿主机 Nginx 反代
@@ -247,3 +245,34 @@ git push origin master
 git tag -a v0.3.0 -m "release: auth ingestion and stage3 recommendations"
 git push origin v0.3.0
 ```
+
+## AI expert mode verification
+
+The backend reads the three LLM settings from the uppercase names used by
+Compose. Keep `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL` in the deployment
+`.env`; a lowercase-only copy such as `llm_api_key` is not interpolated by
+Compose. Do not print the key while checking it.
+
+Before starting the stack, make Compose resolve the file successfully:
+
+```bash
+test -n "${LLM_API_KEY:-}" || { echo "LLM_API_KEY is missing"; exit 1; }
+docker compose config --quiet
+docker compose up -d --build
+docker compose logs --tail=200 backend | grep -i -E "LLM configuration|AI mode degraded|AI rerank"
+```
+
+The backend startup log reports only `configured`, `model`, and `base_url`.
+For an end-to-end check, the response must contain `engine_mode: "ai"` and a
+non-empty `llm_narrative`:
+
+```bash
+curl -s -X POST http://127.0.0.1:18080/api/recommend \
+  -H "Content-Type: application/json" \
+  -d '{"age":30,"gender":"male","annual_income":200000,"job_class":2,"life_stage":"single","enable_llm_engine":true}'
+```
+
+If the mode is `degraded`, inspect the corresponding `AI rerank failed` log.
+It includes the exception, model, and base URL but never the API key. A
+`no candidate packages available` message means the product seed did not run;
+check the `products` table and the backend startup logs.

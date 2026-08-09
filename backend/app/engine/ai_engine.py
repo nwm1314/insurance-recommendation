@@ -1,8 +1,10 @@
 import json
 import logging
+from urllib.parse import urlparse
+import httpx
 from openai import OpenAI
 from pydantic import BaseModel, Field, ValidationError
-from backend.app.config import settings
+from backend.app.config import safe_llm_base_url, settings
 from backend.app.engine.models import UserProfile, ScoredProduct
 
 logger = logging.getLogger(__name__)
@@ -48,7 +50,7 @@ def _extract_json(raw_content: str) -> str | None:
             if content.lower().startswith("json"):
                 content = content[len("json"):].lstrip()
     try:
-        data = json.loads(content)
+        json.loads(content)
     except json.JSONDecodeError:
         start = content.find("{")
         end = content.rfind("}")
@@ -94,44 +96,126 @@ def ai_rerank_sync(
     """Synchronous AI call that returns validated structured explanation.
     Returns None if AI is unavailable or fails."""
     if not settings.llm_api_key:
-        logger.warning("AI rerank skipped: llm_api_key is not configured")
+        logger.warning(
+            "AI rerank skipped: LLM_API_KEY is not configured (model=%s, base_url=%s)",
+            settings.llm_model,
+            safe_llm_base_url(settings.llm_base_url),
+        )
         return None
 
     if not package_products:
-        logger.warning("AI rerank skipped: no package products to rerank")
+        logger.warning(
+            "AI rerank skipped: no package products to rerank (model=%s, base_url=%s)",
+            settings.llm_model,
+            safe_llm_base_url(settings.llm_base_url),
+        )
         return None
 
     products_text = _build_products_text(package_products)
     packages_text = _build_packages_text(packages) if packages else ""
     user_text = _build_user_text(user)
 
-    client = OpenAI(
-        api_key=settings.llm_api_key,
-        base_url=settings.llm_base_url,
-        timeout=settings.llm_read_timeout,
-    )
-
     try:
-        response = client.chat.completions.create(
-            model=settings.llm_model,
-            messages=[
-                {"role": "system", "content": STRUCTURED_SYSTEM_PROMPT},
-                {"role": "user", "content": user_text + "\n推荐套餐方案：\n" + packages_text + "\n套餐包含产品：\n" + products_text},
-            ],
-            response_format={"type": "json_object"},
-            timeout=settings.llm_read_timeout,
+        client = OpenAI(
+            api_key=settings.llm_api_key,
+            base_url=settings.llm_base_url,
+            timeout=_llm_timeout(),
+            max_retries=settings.llm_max_retries,
         )
-        content = response.choices[0].message.content or ""
+        messages = [
+            {"role": "system", "content": STRUCTURED_SYSTEM_PROMPT},
+            {"role": "user", "content": user_text + "\n推荐套餐方案：\n" + packages_text + "\n套餐包含产品：\n" + products_text},
+        ]
+        response = _create_completion(client, messages)
+        content = _message_content(response)
+        if not content.strip():
+            logger.warning(
+                "AI rerank returned empty content; retrying (model=%s, base_url=%s)",
+                settings.llm_model,
+                safe_llm_base_url(settings.llm_base_url),
+            )
+            response = _create_completion(client, messages)
+            content = _message_content(response)
         allowed_ids = {product.product_id for product in package_products}
         parsed = validate_ai_output(content, allowed_ids)
         if parsed is None:
-            logger.warning("AI rerank failed: LLM output failed schema or product ID whitelist validation")
+            logger.warning(
+                "AI rerank failed: LLM output failed schema or product ID whitelist validation "
+                "(model=%s, base_url=%s)",
+                settings.llm_model,
+                safe_llm_base_url(settings.llm_base_url),
+            )
             return None
         narrative = render_ai_explanation(parsed)
+        if not narrative:
+            logger.warning(
+                "AI rerank failed: LLM returned an empty narrative (model=%s, base_url=%s)",
+                settings.llm_model,
+                safe_llm_base_url(settings.llm_base_url),
+            )
+            return None
         return narrative, parsed
     except Exception as exc:
-        logger.warning("AI rerank failed: %s (model=%s, base_url=%s)", exc, settings.llm_model, settings.llm_base_url)
+        logger.warning("AI rerank failed: %s (model=%s, base_url=%s)", exc, settings.llm_model, safe_llm_base_url(settings.llm_base_url))
         return None
+
+
+def _is_deepseek_v4() -> bool:
+    """Return whether the configured endpoint is DeepSeek's V4 API."""
+    host = (urlparse(settings.llm_base_url).hostname or "").lower()
+    return host == "api.deepseek.com" and settings.llm_model.startswith("deepseek-v4-")
+
+
+def _create_completion(client, messages: list[dict]):
+    """Create a bounded JSON completion with provider-specific V4 settings."""
+    kwargs = {
+        "model": settings.llm_model,
+        "messages": messages,
+        "response_format": {"type": "json_object"},
+        "max_tokens": settings.llm_max_tokens,
+        "timeout": _llm_timeout(),
+    }
+    # DeepSeek V4 defaults to thinking mode. For this short, schema-bound
+    # explanation endpoint, disabling it prevents reasoning from consuming the
+    # output budget and leaving content empty/truncated.
+    if _is_deepseek_v4():
+        kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+    try:
+        return client.chat.completions.create(**kwargs)
+    except Exception as exc:
+        # Some OpenAI-compatible gateways reject response_format even though
+        # they support normal chat completions. Retry once without JSON mode;
+        # validate_ai_output still enforces the schema and product whitelist.
+        message = str(exc).lower()
+        status_code = getattr(exc, "status_code", None)
+        if status_code == 400 and "response_format" in message:
+            logger.warning(
+                "AI rerank JSON response_format unsupported; retrying plain completion "
+                "(model=%s, base_url=%s)",
+                settings.llm_model,
+                safe_llm_base_url(settings.llm_base_url),
+            )
+            kwargs.pop("response_format", None)
+            return client.chat.completions.create(**kwargs)
+        raise
+
+
+def _llm_timeout() -> httpx.Timeout:
+    """Use the short connect timeout while allowing a longer model read."""
+    return httpx.Timeout(settings.llm_read_timeout, connect=settings.llm_connect_timeout)
+
+
+def _message_content(response) -> str:
+    """Normalize OpenAI-compatible message content into plain text."""
+    content = getattr(response.choices[0].message, "content", "") or ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            part.get("text", "") if isinstance(part, dict) else str(getattr(part, "text", ""))
+            for part in content
+        )
+    return str(content)
 
 
 def _build_products_text(scored_products: list[ScoredProduct]) -> str:
