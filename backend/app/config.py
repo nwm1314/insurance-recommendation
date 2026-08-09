@@ -7,12 +7,35 @@ from pydantic_settings import SettingsConfigDict
 BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = BASE_DIR.parent
 ENV_FILE = PROJECT_ROOT / ".env"
+OPENAI_CHAT_COMPLETIONS_SUFFIX = "/chat/completions"
+
+
+def normalize_llm_base_url(value: str) -> str:
+    """Normalize a provider URL before handing it to the OpenAI SDK.
+
+    OpenAI-compatible clients append ``/chat/completions`` themselves. Some
+    deployment consoles incorrectly store the full operation URL, which would
+    otherwise produce a doubled path and a provider 404 response.
+    """
+    raw = value.strip()
+    try:
+        parsed = urlsplit(raw)
+        parsed.port
+    except (AttributeError, ValueError):
+        return raw
+    if not parsed.scheme or not parsed.hostname:
+        return raw
+    path = parsed.path.rstrip("/")
+    suffix = OPENAI_CHAT_COMPLETIONS_SUFFIX
+    if path.lower().endswith(suffix):
+        path = path[: -len(suffix)].rstrip("/")
+    return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
 
 
 def safe_llm_base_url(value: str) -> str:
     """Return an operator-safe endpoint for logs (strip credentials/query)."""
     try:
-        parsed = urlsplit(value.strip())
+        parsed = urlsplit(normalize_llm_base_url(value))
         port = parsed.port
     except (AttributeError, ValueError):
         return "<invalid>"

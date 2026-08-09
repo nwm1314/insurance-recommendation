@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from backend.main import app
 from backend.app.database import SessionLocal
 from backend.app.engine.ai_engine import AIRecommendationExplanation, render_ai_explanation, validate_ai_output
+from backend.app.config import normalize_llm_base_url
 from backend.app.engine.budget import calculate_budget
 from backend.app.engine.budget import calculate_sum_insured
 from backend.app.engine.combo_builder import build_combos
@@ -347,7 +348,7 @@ def test_ai_rerank_disables_deepseek_thinking_and_retries_empty_content(monkeypa
 
     monkeypatch.setattr(ai_engine, "OpenAI", fake_openai)
     monkeypatch.setattr(settings, "llm_api_key", "test-key")
-    monkeypatch.setattr(settings, "llm_base_url", "https://api.deepseek.com/v1")
+    monkeypatch.setattr(settings, "llm_base_url", "https://api.deepseek.com/v1/chat/completions")
     monkeypatch.setattr(settings, "llm_model", "deepseek-v4-flash")
     monkeypatch.setattr(settings, "llm_max_tokens", 2048)
     monkeypatch.setattr(settings, "llm_max_retries", 3)
@@ -368,10 +369,16 @@ def test_ai_rerank_disables_deepseek_thinking_and_retries_empty_content(monkeypa
     assert result is not None
     assert result[0] == "重试成功\n推荐理由：匹配"
     assert clients[0].init_kwargs["max_retries"] == 3
+    assert clients[0].init_kwargs["base_url"] == "https://api.deepseek.com/v1"
     assert len(clients[0].chat.completions.calls) == 2
     for call in clients[0].chat.completions.calls:
         assert call["max_tokens"] == 2048
         assert call["extra_body"] == {"thinking": {"type": "disabled"}}
+
+
+def test_llm_base_url_normalizes_openai_chat_completion_suffix():
+    assert normalize_llm_base_url("https://opencode.ai/zen/v1/chat/completions") == "https://opencode.ai/zen/v1"
+    assert normalize_llm_base_url("https://api.deepseek.com/v1") == "https://api.deepseek.com/v1"
 
 
 def test_ai_rerank_retries_without_unsupported_json_response_format(monkeypatch):
