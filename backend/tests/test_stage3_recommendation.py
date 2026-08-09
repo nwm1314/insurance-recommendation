@@ -125,6 +125,19 @@ def test_stage3_scoring_budget_and_ai_invariants():
     assert valid_ai is not None
     assert "方案摘要" in render_ai_explanation(valid_ai)
     assert validate_ai_output('{"selected_product_ids":[999],"summary":"越权"}', {1, 2}) is None
+    markdown_wrapped = validate_ai_output(
+        '```json\n{"selected_product_ids":[2],"summary":"markdown 包裹","reasoning":["ok"],"risk_notes":[],"comparison_notes":[]}\n```',
+        {1, 2},
+    )
+    assert markdown_wrapped is not None
+    assert markdown_wrapped.summary == "markdown 包裹"
+    prose_wrapped = validate_ai_output(
+        '推荐如下：\n{"selected_product_ids":[1],"summary":"前后有杂文","reasoning":["ok"],"risk_notes":[],"comparison_notes":[]}\n以上是完整方案。',
+        {1, 2},
+    )
+    assert prose_wrapped is not None
+    assert prose_wrapped.summary == "前后有杂文"
+    assert validate_ai_output("模型拒绝回答问题", {1, 2}) is None
 
 
 def test_invalid_scoring_weight_config_falls_back_to_defaults(monkeypatch):

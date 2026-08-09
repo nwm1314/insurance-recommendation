@@ -31,8 +31,8 @@ class Settings(BaseSettings):
     scoring_weights_fail_fast: bool = False
 
     llm_api_key: str = ""
-    llm_base_url: str = "https://api.openai.com/v1"
-    llm_model: str = "gpt-4o-mini"
+    llm_base_url: str = "https://api.deepseek.com/v1"
+    llm_model: str = "deepseek-v4-flash"
     llm_max_retries: int = 3
     llm_connect_timeout: float = 3.0
     llm_read_timeout: float = 30.0

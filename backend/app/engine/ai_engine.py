@@ -32,9 +32,38 @@ class AIRecommendationExplanation(BaseModel):
     comparison_notes: list[str] = Field(default_factory=list)
 
 
-def validate_ai_output(raw_content: str, allowed_product_ids: set[int]) -> AIRecommendationExplanation | None:
+def _extract_json(raw_content: str) -> str | None:
+    """Extract a JSON object from LLM output, tolerating markdown fences.
+
+    Some models wrap JSON in ```json ... ``` fences or add prose around it.
+    Returning None means no parseable JSON object was found.
+    """
+    content = raw_content.strip()
+    if content.startswith("```"):
+        fence = "```"
+        start = content.find(fence)
+        end = content.rfind(fence)
+        if start != -1 and end > start:
+            content = content[start + len(fence):end].strip()
+            if content.lower().startswith("json"):
+                content = content[len("json"):].lstrip()
     try:
-        data = json.loads(raw_content)
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        start = content.find("{")
+        end = content.rfind("}")
+        if start == -1 or end <= start:
+            return None
+        content = content[start:end + 1]
+    return content
+
+
+def validate_ai_output(raw_content: str, allowed_product_ids: set[int]) -> AIRecommendationExplanation | None:
+    extracted = _extract_json(raw_content)
+    if extracted is None:
+        return None
+    try:
+        data = json.loads(extracted)
         parsed = AIRecommendationExplanation.model_validate(data)
     except (json.JSONDecodeError, ValidationError, TypeError):
         return None
