@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 import httpx
 from openai import OpenAI
 from pydantic import BaseModel, Field, ValidationError
-from backend.app.config import safe_llm_base_url, settings
+from backend.app.config import normalize_llm_base_url, safe_llm_base_url, settings
 from backend.app.engine.models import UserProfile, ScoredProduct
 
 logger = logging.getLogger(__name__)
@@ -114,11 +114,12 @@ def ai_rerank_sync(
     products_text = _build_products_text(package_products)
     packages_text = _build_packages_text(packages) if packages else ""
     user_text = _build_user_text(user)
+    llm_base_url = normalize_llm_base_url(settings.llm_base_url)
 
     try:
         client = OpenAI(
             api_key=settings.llm_api_key,
-            base_url=settings.llm_base_url,
+            base_url=llm_base_url,
             timeout=_llm_timeout(),
             max_retries=settings.llm_max_retries,
         )
@@ -162,7 +163,7 @@ def ai_rerank_sync(
 
 def _is_deepseek_v4() -> bool:
     """Return whether the configured endpoint is DeepSeek's V4 API."""
-    host = (urlparse(settings.llm_base_url).hostname or "").lower()
+    host = (urlparse(normalize_llm_base_url(settings.llm_base_url)).hostname or "").lower()
     return host == "api.deepseek.com" and settings.llm_model.startswith("deepseek-v4-")
 
 

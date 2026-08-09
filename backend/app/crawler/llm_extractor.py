@@ -1,6 +1,6 @@
 import json
 from openai import OpenAI
-from backend.app.config import settings
+from backend.app.config import normalize_llm_base_url, settings
 
 EXTRACT_PROMPT = """你是一个保险产品信息提取器。从以下网页文本中提取保险产品信息，严格按 JSON 格式输出。
 
@@ -51,7 +51,7 @@ def extract_product(text: str) -> dict | None:
     """Extract structured product info using LLM"""
     client = OpenAI(
         api_key=settings.llm_api_key,
-        base_url=settings.llm_base_url,
+        base_url=normalize_llm_base_url(settings.llm_base_url),
         timeout=settings.llm_read_timeout,
     )
 
