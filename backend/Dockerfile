@@ -1,4 +1,9 @@
-FROM python:3.12-slim
+# Pin the Debian release used by Playwright's dependency installer.  The
+# floating slim tag moved to Debian trixie, where the installer still asks
+# for packages removed from the repository (ttf-unifont and
+# ttf-ubuntu-font-family), making production builds fail before the app is
+# copied into the image.
+FROM python:3.12-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
