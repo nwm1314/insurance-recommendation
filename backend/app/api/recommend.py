@@ -1,11 +1,11 @@
 import json
 import logging
 from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from backend.app.database import get_db
 from backend.app.dependencies.auth import get_optional_current_user
 from backend.app.models.auth import User
+from backend.app.config import safe_llm_base_url
 from backend.app.schemas.user_profile import UserProfileRequest
 from backend.app.engine.models import UserProfile, ScoredProduct
 from backend.app.engine.rule_engine import filter_candidate_pool_with_reasons, get_allowed_types, get_type_budget_limits
@@ -204,9 +204,13 @@ def recommend(
     # AI mode: call LLM synchronously, return JSON with narrative
     from backend.app.config import settings
     if not settings.llm_api_key:
-        logger.warning("AI mode degraded: llm_api_key is not configured")
+        logger.warning(
+            "AI mode degraded: LLM_API_KEY is not configured (model=%s, base_url=%s)",
+            settings.llm_model,
+            safe_llm_base_url(settings.llm_base_url),
+        )
         response = _build_response(user, result, engine_mode="degraded")
-        response["llm_narrative"] = "AI 模式需要配置 LLM API Key（请在 .env 中设置 llm_api_key）。当前展示为极速规则模式推荐结果。"
+        response["llm_narrative"] = "AI 模式需要配置 LLM API Key（请在 .env 中设置大写 LLM_API_KEY）。当前展示为极速规则模式推荐结果。"
         if current_user:
             save_recommendation_record(db, current_user, request.model_dump(), response)
         return response
@@ -219,7 +223,11 @@ def recommend(
         star_pkg = packages[1] if len(packages) > 1 else packages[0]
         package_products = list(star_pkg.products)
     else:
-        logger.warning("AI mode degraded: no candidate packages available")
+        logger.warning(
+            "AI mode degraded: no candidate packages available (model=%s, base_url=%s)",
+            settings.llm_model,
+            safe_llm_base_url(settings.llm_base_url),
+        )
 
     ai_result = ai_rerank_sync(user, package_products, packages)
 
@@ -229,7 +237,12 @@ def recommend(
         response["llm_narrative"] = narrative
         response["ai_explanation"] = ai_explanation.model_dump() if ai_explanation else None
     else:
-        logger.warning("AI mode degraded: LLM rerank returned no result, falling back to rule engine")
+        logger.warning(
+            "AI mode degraded: LLM rerank returned no result, falling back to rule engine "
+            "(model=%s, base_url=%s)",
+            settings.llm_model,
+            safe_llm_base_url(settings.llm_base_url),
+        )
         response = _build_response(user, result, engine_mode="degraded")
         response["llm_narrative"] = get_fallback_narrative(
             result["packages"][0].products if result["packages"] else []

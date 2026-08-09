@@ -3,7 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.app.config import settings
+from backend.app.config import safe_llm_base_url, settings
 from backend.app.database import init_db
 from backend.app.api.products import router as products_router
 from backend.app.api.recommend import router as recommend_router
@@ -23,6 +23,12 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     os.makedirs("data", exist_ok=True)
+    logger.info(
+        "LLM configuration loaded: configured=%s model=%s base_url=%s",
+        bool(settings.llm_api_key),
+        settings.llm_model,
+        safe_llm_base_url(settings.llm_base_url),
+    )
     validate_scoring_weights_on_startup(logger)
     init_db()
     db = SessionLocal()

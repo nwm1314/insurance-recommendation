@@ -1,10 +1,27 @@
-import os
 import yaml
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 from pydantic_settings import BaseSettings
 from pydantic_settings import SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = BASE_DIR.parent
+ENV_FILE = PROJECT_ROOT / ".env"
+
+
+def safe_llm_base_url(value: str) -> str:
+    """Return an operator-safe endpoint for logs (strip credentials/query)."""
+    try:
+        parsed = urlsplit(value.strip())
+        port = parsed.port
+    except (AttributeError, ValueError):
+        return "<invalid>"
+    if not parsed.scheme or not parsed.hostname:
+        return "<invalid>"
+    netloc = parsed.hostname
+    if port:
+        netloc = f"{netloc}:{port}"
+    return urlunsplit((parsed.scheme, netloc, parsed.path.rstrip("/"), "", ""))
 
 
 def _load_yaml(filename: str) -> dict:
@@ -16,7 +33,10 @@ def _load_yaml(filename: str) -> dict:
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env")
+    # Resolve the repository .env independently of the process working
+    # directory. The manual runbook starts Uvicorn from backend/, while Docker
+    # injects the same values through Compose.
+    model_config = SettingsConfigDict(env_file=ENV_FILE)
 
     database_url: str = "sqlite:///data/insurance.db"
     redis_url: str = "redis://localhost:6379"
@@ -34,8 +54,11 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.deepseek.com/v1"
     llm_model: str = "deepseek-v4-flash"
     llm_max_retries: int = 3
+    # Bound structured responses so DeepSeek V4 thinking cannot consume the
+    # entire request budget before returning JSON content.
+    llm_max_tokens: int = 2048
     llm_connect_timeout: float = 3.0
-    llm_read_timeout: float = 30.0
+    llm_read_timeout: float = 90.0
 
     rate_limit_ip_per_minute: int = 120
     rate_limit_user_per_minute: int = 30

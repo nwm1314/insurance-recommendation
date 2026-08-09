@@ -109,13 +109,13 @@ insurance_recommendation/
 ```bash
 # 配置环境变量
 cp .env.example .env
-# 编辑 .env 填入 LLM_API_KEY、LLM_BASE_URL（可选，不填则仅极速模式可用）
+# 编辑 .env 填入大写 LLM_API_KEY、LLM_BASE_URL、LLM_MODEL；Compose 会拒绝缺少 LLM_API_KEY 的配置
 
 # 启动所有服务
-docker-compose up -d
+docker compose up -d --build
 
 # 初始化种子数据
-docker-compose exec backend python scripts/seed.py
+docker compose exec backend python scripts/seed.py
 ```
 
 访问:
@@ -150,9 +150,10 @@ npm run dev  # http://localhost:3000
 | `DATABASE_URL` | `sqlite:///data/insurance.db` | 数据库连接串 |
 | `REDIS_URL` | `redis://localhost:6379` | Redis 连接串 |
 | `LLM_API_KEY` | - | LLM API 密钥（DeepSeek/OpenAI 等） |
-| `LLM_BASE_URL` | `https://api.openai.com/v1` | LLM API 地址 |
-| `LLM_MODEL` | `gpt-4o-mini` | 模型名称 |
-| `LLM_READ_TIMEOUT` | `30.0` | LLM 读取超时（秒） |
+| `LLM_BASE_URL` | `https://api.deepseek.com/v1` | LLM API 地址 |
+| `LLM_MODEL` | `deepseek-v4-flash` | 模型名称 |
+| `LLM_MAX_TOKENS` | `2048` | 结构化 AI 输出上限 |
+| `LLM_READ_TIMEOUT` | `90.0` | LLM 读取超时（秒） |
 
 ## API 端点
 
