@@ -14,7 +14,7 @@ from backend.app.middleware.rate_limiter import RateLimiterMiddleware
 from backend.app.crawler.scheduler import init_scheduler
 from backend.app.database import SessionLocal
 from backend.app.services.auth_service import ensure_auth_defaults
-from backend.app.data_ingestion.pipeline import ensure_seed_sources
+from backend.app.data_ingestion.pipeline import ensure_seed_products_if_empty, ensure_seed_sources
 from backend.app.engine.scoring import validate_scoring_weights_on_startup
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,7 @@ async def lifespan(app: FastAPI):
     try:
         ensure_auth_defaults(db)
         ensure_seed_sources(db)
+        ensure_seed_products_if_empty(db)
     finally:
         db.close()
     if not settings.disable_scheduler_in_tests:

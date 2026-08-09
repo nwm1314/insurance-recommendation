@@ -1,9 +1,18 @@
 import time
 import redis
 import jwt
-from fastapi import Request, HTTPException
+from fastapi import Request
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from backend.app.config import settings
+
+
+def _get_client_ip(request: Request) -> str:
+    """Real client IP, respecting the reverse-proxy chain (X-Forwarded-For)."""
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip() or "unknown"
+    return request.client.host if request.client else "unknown"
 
 
 class RateLimiterMiddleware(BaseHTTPMiddleware):
@@ -19,14 +28,14 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         if request.url.path.startswith("/api/"):
-            client_ip = request.client.host if request.client else "unknown"
+            client_ip = _get_client_ip(request)
 
             if not self._check_ip_limit(client_ip):
-                raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
+                return JSONResponse(status_code=429, content={"detail": "请求过于频繁，请稍后再试"})
 
             user_id = self._get_user_id(request)
             if user_id and not self._check_user_limit(user_id):
-                raise HTTPException(status_code=429, detail="用户请求过于频繁，请稍后再试")
+                return JSONResponse(status_code=429, content={"detail": "用户请求过于频繁，请稍后再试"})
 
         response = await call_next(request)
         return response

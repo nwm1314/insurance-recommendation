@@ -1,8 +1,11 @@
 import json
+import logging
 from openai import OpenAI
 from pydantic import BaseModel, Field, ValidationError
 from backend.app.config import settings
 from backend.app.engine.models import UserProfile, ScoredProduct
+
+logger = logging.getLogger(__name__)
 
 STRUCTURED_SYSTEM_PROMPT = """你是一位保险推荐解释助手。你只能解释系统已经选出的产品，不得新增、替换或选择候选池外产品。
 
@@ -62,9 +65,11 @@ def ai_rerank_sync(
     """Synchronous AI call that returns validated structured explanation.
     Returns None if AI is unavailable or fails."""
     if not settings.llm_api_key:
+        logger.warning("AI rerank skipped: llm_api_key is not configured")
         return None
 
     if not package_products:
+        logger.warning("AI rerank skipped: no package products to rerank")
         return None
 
     products_text = _build_products_text(package_products)
@@ -91,10 +96,12 @@ def ai_rerank_sync(
         allowed_ids = {product.product_id for product in package_products}
         parsed = validate_ai_output(content, allowed_ids)
         if parsed is None:
+            logger.warning("AI rerank failed: LLM output failed schema or product ID whitelist validation")
             return None
         narrative = render_ai_explanation(parsed)
         return narrative, parsed
-    except Exception:
+    except Exception as exc:
+        logger.warning("AI rerank failed: %s (model=%s, base_url=%s)", exc, settings.llm_model, settings.llm_base_url)
         return None
 
 

@@ -37,9 +37,9 @@ class Settings(BaseSettings):
     llm_connect_timeout: float = 3.0
     llm_read_timeout: float = 30.0
 
-    rate_limit_ip_per_minute: int = 10
-    rate_limit_user_per_minute: int = 3
-    rate_limit_user_per_day: int = 50
+    rate_limit_ip_per_minute: int = 120
+    rate_limit_user_per_minute: int = 30
+    rate_limit_user_per_day: int = 300
 
 settings = Settings()
 

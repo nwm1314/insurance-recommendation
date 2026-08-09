@@ -265,6 +265,54 @@ def test_ai_explanation_is_returned_as_structured_field(client, monkeypatch):
     assert data["ai_explanation"]["selected_product_ids"]
 
 
+def test_ai_mode_degrades_to_rule_when_llm_unavailable(client, monkeypatch):
+    import backend.app.api.recommend as recommend_api
+    from backend.app.config import settings
+
+    _seed_products()
+    monkeypatch.setattr(settings, "llm_api_key", "test-key")
+    monkeypatch.setattr(recommend_api, "ai_rerank_sync", lambda user, products, packages: None)
+
+    payload = {**_base_payload(), "age": 30, "enable_llm_engine": True}
+    response = client.post("/api/recommend", json=payload)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["engine_mode"] == "degraded"
+    assert data["llm_narrative"]
+    assert data["packages"]
+
+
+def test_ai_mode_without_api_key_degrades_with_clear_narrative(client, monkeypatch):
+    import backend.app.api.recommend as recommend_api
+    from backend.app.config import settings
+
+    _seed_products()
+    monkeypatch.setattr(settings, "llm_api_key", "")
+
+    payload = {**_base_payload(), "age": 30, "enable_llm_engine": True}
+    response = client.post("/api/recommend", json=payload)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["engine_mode"] == "degraded"
+    assert "LLM API Key" in data["llm_narrative"]
+
+
+def test_seed_products_if_empty_is_idempotent():
+    from backend.app.data_ingestion.pipeline import ensure_seed_products_if_empty
+    from backend.app.models.product import Product
+
+    db = SessionLocal()
+    try:
+        assert db.query(Product).count() == 0
+        ensure_seed_products_if_empty(db)
+        first_count = db.query(Product).count()
+        assert first_count > 100
+        ensure_seed_products_if_empty(db)
+        assert db.query(Product).count() == first_count
+    finally:
+        db.close()
+
+
 def test_sse_stream_uses_safe_degraded_fallback(monkeypatch):
     import backend.app.api.recommend as recommend_api
     import backend.app.engine.ai_engine as ai_engine

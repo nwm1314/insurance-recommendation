@@ -45,6 +45,20 @@ def ensure_seed_sources(db: Session):
     db.commit()
 
 
+def ensure_seed_products_if_empty(db: Session):
+    """Seed the product catalog on first boot so a fresh deployment is usable.
+
+    The documented deployment flow (alembic migrations only) does not populate
+    the products table. An empty catalog makes both the rule engine and the AI
+    engine return empty packages (AI mode silently degrades to rule mode).
+    """
+    from backend.app.models.product import Product
+    if db.query(Product).count() > 0:
+        return
+    from backend.scripts.seed import seed
+    seed()
+
+
 def create_source_page(db: Session, platform_id: int, url: str, page_type: str = "product") -> SourcePage:
     existing = db.query(SourcePage).filter(SourcePage.platform_id == platform_id, SourcePage.url == url).first()
     if existing:
