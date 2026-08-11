@@ -6,24 +6,27 @@ from openai import OpenAI
 from pydantic import BaseModel, Field, ValidationError
 from backend.app.config import normalize_llm_base_url, safe_llm_base_url, settings
 from backend.app.engine.models import UserProfile, ScoredProduct
+from backend.app.engine.health import analyze_health_issues
 
 logger = logging.getLogger(__name__)
 
-STRUCTURED_SYSTEM_PROMPT = """你是一位保险推荐解释助手。你只能解释系统已经选出的产品，不得新增、替换或选择候选池外产品。
+# 说明：ai_rerank_sync 为历史命名，实际职责仅是对规则引擎已选出的套餐做解释说明，
+# 不参与产品筛选与排序。选品与排序由 rule_engine（硬规则 + 精算规则）负责。
+STRUCTURED_SYSTEM_PROMPT = """你是保险方案解释助手。系统已由规则引擎（硬规则 + 精算规则）完成产品筛选与套餐组合，你只能解释规则引擎已经选出的产品组合，不得新增、替换或选择套餐外的产品。
 
-请严格输出 JSON 对象：
+严格遵循：
+1. selected_product_ids 只能来自输入中给出的套餐内产品 ID（白名单），不得虚构或越权选择。
+2. 不得声称"由你完成选品/精排/AI 推荐"——选品与排序由规则引擎负责，你只负责解释。
+3. 不得承诺收益、保证承保、给出医疗诊断或诱导隐瞒健康告知。
+4. 涉及健康告知、既往症的表述必须以"请以产品健康告知和保险公司核保为准"收尾。
+5. 请严格输出 JSON 对象（无其他内容）：
 {
   "selected_product_ids": [1, 2],
   "summary": "100字以内方案摘要",
   "reasoning": ["理由1", "理由2"],
   "risk_notes": ["风险提示1"],
   "comparison_notes": ["对比说明1"]
-}
-
-要求：
-1. selected_product_ids 只能来自输入产品 ID。
-2. 不得承诺收益、保证承保或诱导隐瞒健康告知。
-3. 不得输出 JSON 以外的内容。"""
+}"""
 
 
 class AIRecommendationExplanation(BaseModel):
@@ -220,10 +223,16 @@ def _message_content(response) -> str:
 
 
 def _build_products_text(scored_products: list[ScoredProduct]) -> str:
-    return "\n".join([
-        f"- ID {p.product_id}: {p.name}（{p.type}）：保费 {p.premium}/年，保额 {p.sum_insured} 万，评分 {p.score}，公司 {p.company}"
-        for p in scored_products
-    ])
+    """Format package products with traceable rule/profile reasons for the prompt."""
+    parts = []
+    for p in scored_products:
+        reasons = "；".join(p.recommendation_reasons) if p.recommendation_reasons else "规则引擎按年龄/职业/健康/预算规则纳入候选池"
+        warnings = "；".join(w.get("message", "") for w in p.risk_warnings) if p.risk_warnings else "无"
+        parts.append(
+            f"- ID {p.product_id}: {p.name}（{p.type}）：保费 {p.premium}/年，保额 {p.sum_insured} 万，"
+            f"评分 {p.score}，公司 {p.company}\n  推荐依据：{reasons}\n  健康提示：{warnings}"
+        )
+    return "\n".join(parts)
 
 
 def _build_packages_text(packages: list) -> str:
@@ -236,10 +245,31 @@ def _build_packages_text(packages: list) -> str:
 
 
 def _build_user_text(user: UserProfile) -> str:
-    return f"""
-用户画像：
-- 年龄：{user.age} 岁，性别：{user.gender}
-- 年收入：{user.annual_income} 元
-- 人生阶段：{user.life_stage}，家庭负担：{user.family_burden}
-- 健康状况：{user.health_status}，异常项：{', '.join(user.health_issues) if user.health_issues else '无'}
-"""
+    lines = [
+        "用户画像：",
+        f"- 年龄：{user.age} 岁，性别：{user.gender}",
+        f"- 年收入：{user.annual_income} 元",
+        f"- 人生阶段：{user.life_stage}，家庭负担：{user.family_burden}",
+    ]
+    if user.existing_coverage:
+        lines.append(
+            "- 已有保障：" + "、".join(user.existing_coverage)
+            + "（规则引擎已对可能存在重复保障的险种做软性提示，不作排除）"
+        )
+    preferred = user.preferred_type or ""
+    if preferred:
+        lines.append(f"- 偏好险种：{preferred}（规则引擎据此调整类型优先级，不改变硬规则）")
+    if user.health_issues:
+        analysis = analyze_health_issues(user.health_issues)
+        recognized = "、".join(
+            f"{item['label']}" for item in analysis.recognized
+        ) or "无"
+        lines.append(f"- 健康状态：{user.health_status}，已识别异常项：{recognized}")
+        if analysis.unknown_conditions:
+            lines.append(
+                "- 未识别健康项（仅作记录，不影响本次规则推荐，也不构成承保判断）："
+                + "、".join(analysis.unknown_conditions)
+            )
+    else:
+        lines.append(f"- 健康状态：{user.health_status}，异常项：无")
+    return "\n".join(lines)

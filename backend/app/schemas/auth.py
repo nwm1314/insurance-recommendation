@@ -39,3 +39,10 @@ class SavedProfileRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     profile: dict
     note: str | None = None
+class RecommendationRecordCreate(BaseModel):
+    profile: dict
+    result: dict
+
+
+class RoleUpdateRequest(BaseModel):
+    roles: list[str]

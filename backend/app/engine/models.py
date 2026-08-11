@@ -26,7 +26,9 @@ class ScoredProduct:
     company: str
     type: str
     premium: float
-    sum_insured: float
+    premium_max: float | None = None
+    deductible: float | None = None
+    sum_insured: float = 0.0
     source_url: str = ""
     layer: str = "core"        # basic / core / supplement
     score: float = 0.0
@@ -41,7 +43,8 @@ class ComboPackage:
     tag: str                   # budget / star / premium
     tag_label: str
     total_premium: float
-    budget_ratio: float
+    total_premium_max: float | None = None
+    budget_ratio: float = 0.0
     budget_utilization: float = 0.0
     completeness_score: float = 0.0
     coverage_gap_notes: list[str] = field(default_factory=list)

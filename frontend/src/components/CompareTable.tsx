@@ -1,4 +1,4 @@
-import { Table, Tag, Tooltip } from 'antd';
+﻿import { Table, Tag, Tooltip } from 'antd';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { ProductItem } from '../types';
@@ -8,14 +8,14 @@ interface Props {
 }
 
 const COLUMN_HELP: Record<string, string> = {
-  score: '综合评分（0-100），基于保障全面性、保费竞争力、投保宽松度、等待期、豁免条款、保额充足度、品牌信任、增值服务8个维度加权计算，分数越高越好',
-  coverage: '保障全面性（满分20）：重疾种类数+轻中症覆盖+多次赔付+责任条数，越多越好',
-  price: '保费竞争力（满分18）：在同一险种产品池中的价格百分位排名，越高越便宜',
+  score: '综合评分（0-100），基于保额全面性、保费竞争力、投保宽松度、等待期、豁免条款、保额充足性、品牌信度、增值服务 8 个维度加权计算，分数越高越好',
+  coverage: '保障全面性（满分20）：重疾种类+轻症覆盖+多次赔付+责任条数，越多越好',
+  price: '保费竞争力（满分18）：在同一险种产品池中的百分位排名，越靠前越便宜',
   flexibility: '投保宽松度（满分15）：健康告知条款越少+职业限制越宽 → 得分越高',
-  waiting: '等待期优势（满分10）：≤90天满分，180天仅50%',
+  waiting: '等待期优惠（满分10）：≤90天满分，180天仅50%',
   adequacy: '保额充足度（满分10）：实际可投保额÷建议保额，越高越好',
   waiver: '豁免条款（满分10）：含被保人豁免+5分，含投保人豁免再+5分',
-  brand: '品牌信任度（满分10）：T1老牌85分/T2合资75分/T3互联网65分',
+  brand: '品牌信度（满分10）：T1老牌85起 T2合资75起 T3互联网65起',
   service: '增值服务（满分7）：就医绿通/二次诊疗/特药配送等，越多越好',
 };
 
@@ -30,6 +30,13 @@ function ScoreCell({ value, maxScore, tooltip }: { value: number; maxScore: numb
       </span>
     </Tooltip>
   );
+}
+
+function formatPremium(min: number, max: number | null): string {
+  if (max && max > min) {
+    return `¥${min.toLocaleString()}-¥${max.toLocaleString()}`;
+  }
+  return `¥${min.toLocaleString()}`;
 }
 
 export default function CompareTable({ products }: Props) {
@@ -49,9 +56,13 @@ export default function CompareTable({ products }: Props) {
       render: (v: string) => <Tag>{v}</Tag>,
     },
     {
-      title: '年保费', dataIndex: 'premium', key: 'premium', width: 100,
-      render: (v: number) => <span style={{ fontWeight: 500 }}>¥{v.toLocaleString()}</span>,
+      title: '年保费', dataIndex: 'premium', key: 'premium', width: 120,
+      render: (v: number, record: ProductItem) => <span style={{ fontWeight: 500 }}>{formatPremium(v, record.premium_max)}</span>,
       sorter: (a, b) => a.premium - b.premium,
+    },
+    {
+      title: '免赔额', dataIndex: 'deductible', key: 'deductible', width: 90,
+      render: (v: number | null) => v != null && v > 0 ? `${v.toLocaleString()}元` : '-',
     },
     {
       title: '保额', dataIndex: 'sum_insured', key: 'sum_insured', width: 90,
@@ -113,7 +124,7 @@ export default function CompareTable({ products }: Props) {
       columns={columns}
       dataSource={products}
       rowKey="id"
-      scroll={{ x: 1350 }}
+      scroll={{ x: 1450 }}
       pagination={false}
       size="small"
       bordered

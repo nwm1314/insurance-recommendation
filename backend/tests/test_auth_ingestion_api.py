@@ -1,6 +1,7 @@
 import os
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -10,10 +11,16 @@ os.environ.setdefault(
 )
 os.environ.setdefault("DISABLE_SCHEDULER_IN_TESTS", "true")
 
+try:
+    os.remove(os.path.join(tempfile.gettempdir(), "insurance_stage3_pytest.db"))
+except OSError:
+    pass
+
 import pytest
 from fastapi.testclient import TestClient
 
 import backend.app.api.ingestion as ingestion_api
+import backend.app.crawler.scheduler as scheduler_module
 import backend.app.data_ingestion.pipelines.crawl_product as crawl_product_pipeline
 from backend.main import app
 from backend.app.database import SessionLocal
@@ -86,31 +93,52 @@ def _register(client: TestClient, email: str, password: str = "Password12345") -
 
 def test_auth_register_login_refresh_me_logout(client):
     registered = _register(client, "admin-auth-test@example.com")
-    assert "admin" in registered["user"]["roles"]
-    assert "crawl:read" in registered["user"]["permissions"]
+    assert "admin" not in registered["roles"]
+    assert "user" in registered["roles"]
+    assert "product:write" not in registered["permissions"]
 
     login = client.post("/api/auth/login", json={"email": "admin-auth-test@example.com", "password": "Password12345"})
     assert login.status_code == 200, login.text
-    session = login.json()
 
-    headers = {"Authorization": f"Bearer {session['access_token']}"}
+    access_token = client.cookies.get("access_token")
+    assert access_token is not None
+    headers = {"Authorization": f"Bearer {access_token}"}
     me = client.get("/api/auth/me", headers=headers)
     assert me.status_code == 200, me.text
     assert me.json()["email"] == "admin-auth-test@example.com"
 
-    refreshed = client.post("/api/auth/refresh", json={"refresh_token": session["refresh_token"]})
+    refreshed = client.post("/api/auth/refresh")
     assert refreshed.status_code == 200, refreshed.text
 
-    logout = client.post("/api/auth/logout", headers=headers, json={"refresh_token": refreshed.json()["refresh_token"]})
+    logout = client.post("/api/auth/logout", headers=headers)
     assert logout.status_code == 200, logout.text
 
 
 def test_admin_ingestion_permissions_and_core_flow(client, monkeypatch):
-    admin = _register(client, "admin-ingestion-test@example.com")
-    user = _register(client, "normal-ingestion-test@example.com")
-    admin_headers = {"Authorization": f"Bearer {admin['access_token']}"}
-    user_headers = {"Authorization": f"Bearer {user['access_token']}"}
+    db = SessionLocal()
+    try:
+        from backend.app.config import settings as app_settings
+        from backend.app.services.auth_service import ensure_auth_defaults
 
+        monkeypatch.setattr(app_settings, "first_admin_email", "admin-ingestion-test@example.com")
+        monkeypatch.setattr(app_settings, "first_admin_password", "Password12345")
+        ensure_auth_defaults(db)
+    finally:
+        db.close()
+    user = _register(client, "normal-ingestion-test@example.com")
+    # Login as admin to get cookie-based token
+    admin_login = client.post("/api/auth/login", json={"email": "admin-ingestion-test@example.com", "password": "Password12345"})
+    assert admin_login.status_code == 200, admin_login.text
+    admin_token = client.cookies.get("access_token")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    # Login as normal user
+    user_login = client.post("/api/auth/login", json={"email": "normal-ingestion-test@example.com", "password": "Password12345"})
+    assert user_login.status_code == 200, user_login.text
+    user_token = client.cookies.get("access_token")
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+
+    # Clear cookies to test unauthenticated access
+    client.cookies.clear()
     assert client.get("/api/admin/ingestion/status").status_code == 401
     assert client.get("/api/admin/ingestion/status", headers=user_headers).status_code == 403
     assert client.get("/api/admin/ingestion/status", headers=admin_headers).status_code == 200
@@ -142,10 +170,25 @@ def test_admin_ingestion_permissions_and_core_flow(client, monkeypatch):
         db.refresh(run)
         return run
 
-    monkeypatch.setattr(ingestion_api, "execute_crawl_job", fake_execute)
-    run = client.post(f"/api/admin/ingestion/jobs/{job_id}/run", headers=admin_headers)
-    assert run.status_code == 200, run.text
-    assert run.json()["status"] == "success"
+    monkeypatch.setattr(scheduler_module, "execute_crawl_job", fake_execute)
+    triggered = client.post(f"/api/admin/ingestion/jobs/{job_id}/run", headers=admin_headers)
+    assert triggered.status_code == 200, triggered.text
+    assert triggered.json()["status"] == "started"
+
+    deadline = time.monotonic() + 5
+    run = None
+    while time.monotonic() < deadline:
+        run = (
+            db.query(CrawlRun)
+            .filter(CrawlRun.crawl_job_id == job_id)
+            .order_by(CrawlRun.id.desc())
+            .first()
+        )
+        if run is not None and run.status in ("success", "failed", "skipped"):
+            break
+        time.sleep(0.02)
+    assert run is not None, "background crawl run did not finish in time"
+    assert run.status == "success"
 
     extraction = client.post(
         "/api/admin/ingestion/manual-extractions",

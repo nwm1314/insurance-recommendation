@@ -20,6 +20,7 @@ class Product(Base):
     coverage_period: Mapped[str] = mapped_column(String(50), nullable=True)
     payment_period: Mapped[str] = mapped_column(String(50), nullable=True)
     source_url: Mapped[str] = mapped_column(String(500), nullable=True)
+    deductible: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     disease_count: Mapped[int] = mapped_column(Integer, nullable=True)
     mild_disease_count: Mapped[int] = mapped_column(Integer, nullable=True)

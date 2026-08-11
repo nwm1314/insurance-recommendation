@@ -5,14 +5,12 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from backend.app.config import settings
+from backend.app.dependencies.auth import ACCESS_TOKEN_COOKIE, get_client_ip
 
 
 def _get_client_ip(request: Request) -> str:
-    """Real client IP, respecting the reverse-proxy chain (X-Forwarded-For)."""
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip() or "unknown"
-    return request.client.host if request.client else "unknown"
+    """Real client IP, honoring X-Forwarded-For only via trusted proxies."""
+    return get_client_ip(request) or "unknown"
 
 
 class RateLimiterMiddleware(BaseHTTPMiddleware):
@@ -75,9 +73,13 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
 
     def _get_user_id(self, request: Request) -> str | None:
         authorization = request.headers.get("authorization")
-        if not authorization or not authorization.lower().startswith("bearer "):
+        token = None
+        if authorization and authorization.lower().startswith("bearer "):
+            token = authorization.split(" ", 1)[1]
+        if not token:
+            token = request.cookies.get(ACCESS_TOKEN_COOKIE)
+        if not token:
             return None
-        token = authorization.split(" ", 1)[1]
         try:
             payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         except jwt.PyJWTError:

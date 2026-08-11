@@ -16,3 +16,26 @@ data/
 *.tsbuildinfo
 *.png
 .playwright-mcp/
+
+# Local test/build caches and reports
+frontend/.npmcache/
+frontend/playwright-report/
+frontend/test-results/
+frontend/test_*.txt
+
+# One-off local patch helpers and captured text files
+/temp_*.py
+/fix_*.py
+/fix_*.js
+/label_fix.py
+/patch*.txt
+/patch*.patch
+/test_*.txt
+/chinese_text.txt
+/test_chinese.txt
+/scripts/fix_*.py
+/scripts/patch_*.js
+/scripts/update_tasks.py
+
+# Codex/editor-local workspace metadata
+/.codex/

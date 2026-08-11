@@ -1,9 +1,10 @@
-import os
+﻿import os
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.app.config import safe_llm_base_url, settings
+from starlette.middleware.base import BaseHTTPMiddleware
+from backend.app.config import ensure_no_wildcard_with_credentials, safe_llm_base_url, settings
 from backend.app.database import init_db
 from backend.app.api.products import router as products_router
 from backend.app.api.recommend import router as recommend_router
@@ -49,11 +50,24 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-cors_allow_origins = [
-    origin.strip()
-    for origin in settings.cors_allow_origins.split(",")
-    if origin.strip()
-]
+cors_allow_origins = settings.parsed_cors_origins
+ensure_no_wildcard_with_credentials(cors_allow_origins, allow_credentials=True)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Baseline security response headers; HSTS is only emitted for production."""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        if settings.security_headers:
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+            response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+            if settings.app_env == "production" and settings.hsts_enabled:
+                response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -63,6 +77,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(RateLimiterMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(products_router)
 app.include_router(recommend_router)

@@ -1,5 +1,5 @@
-import apiClient from './client';
-import type { AuthSession, AuthUser, RecommendationRecord, SavedProfile } from '../types';
+﻿import apiClient from './client';
+import type { AuthUser, RecommendationRecord, SavedProfile } from '../types';
 
 export function getStoredUser(): AuthUser | null {
   const raw = localStorage.getItem('auth_user');
@@ -11,27 +11,22 @@ export function getStoredUser(): AuthUser | null {
   }
 }
 
-function persistSession(session: AuthSession) {
-  localStorage.setItem('access_token', session.access_token);
-  localStorage.setItem('refresh_token', session.refresh_token);
-  localStorage.setItem('auth_user', JSON.stringify(session.user));
-  window.dispatchEvent(new Event('auth-changed'));
-}
-
 export async function login(email: string, password: string): Promise<AuthUser> {
-  const { data } = await apiClient.post<AuthSession>('/auth/login', { email, password });
-  persistSession(data);
-  return data.user;
+  const { data } = await apiClient.post<AuthUser>('/auth/login', { email, password });
+  localStorage.setItem('auth_user', JSON.stringify(data));
+  window.dispatchEvent(new Event('auth-changed'));
+  return data;
 }
 
 export async function register(email: string, password: string, fullName?: string): Promise<AuthUser> {
-  const { data } = await apiClient.post<AuthSession>('/auth/register', {
+  const { data } = await apiClient.post<AuthUser>('/auth/register', {
     email,
     password,
     full_name: fullName || undefined,
   });
-  persistSession(data);
-  return data.user;
+  localStorage.setItem('auth_user', JSON.stringify(data));
+  window.dispatchEvent(new Event('auth-changed'));
+  return data;
 }
 
 export async function fetchMe(): Promise<AuthUser> {
@@ -42,12 +37,9 @@ export async function fetchMe(): Promise<AuthUser> {
 }
 
 export async function logout() {
-  const refreshToken = localStorage.getItem('refresh_token');
   try {
-    await apiClient.post('/auth/logout', { refresh_token: refreshToken });
+    await apiClient.post('/auth/logout');
   } finally {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
     localStorage.removeItem('auth_user');
     window.dispatchEvent(new Event('auth-changed'));
   }
@@ -61,4 +53,36 @@ export async function fetchMyRecommendations(): Promise<RecommendationRecord[]> 
 export async function fetchMyProfiles(): Promise<SavedProfile[]> {
   const { data } = await apiClient.get<{ profiles: SavedProfile[] }>('/my/profiles');
   return data.profiles;
+}
+
+export async function fetchRecommendationDetail(id: number): Promise<RecommendationRecord> {
+  const { data } = await apiClient.get<RecommendationRecord>(`/my/recommendations/${id}`);
+  return data;
+}
+
+export async function fetchProfileDetail(id: number): Promise<SavedProfile> {
+  const { data } = await apiClient.get<SavedProfile>(`/my/profiles/${id}`);
+  return data;
+}
+
+export async function saveProfile(name: string, profile: Record<string, unknown>, note?: string): Promise<{ id: number }> {
+  const { data } = await apiClient.post<{ id: number }>('/my/profiles', { name, profile, note });
+  return data;
+}
+
+export async function saveRecommendation(profile: Record<string, unknown>, result: Record<string, unknown>): Promise<{ id: number }> {
+  const { data } = await apiClient.post<{ id: number }>('/my/recommendations', { profile, result });
+  return data;
+}
+export async function deleteRecommendation(id: number): Promise<void> {
+  await apiClient.delete(`/my/recommendations/${id}`);
+}
+
+export async function deleteProfile(id: number): Promise<void> {
+  await apiClient.delete(`/my/profiles/${id}`);
+}
+
+export async function updateProfile(id: number, name: string, profile: Record<string, unknown>, note?: string): Promise<SavedProfile> {
+  const { data } = await apiClient.put<SavedProfile>(`/my/profiles/${id}`, { name, profile, note });
+  return data;
 }

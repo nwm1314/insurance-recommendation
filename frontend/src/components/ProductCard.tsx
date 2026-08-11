@@ -1,4 +1,4 @@
-import { Card, Tag, Typography } from 'antd';
+﻿import { Card, Tag, Typography } from 'antd';
 import ScoreRadar from './ScoreRadar';
 import RiskBadge from './RiskBadge';
 import type { ProductItem } from '../types';
@@ -12,10 +12,17 @@ const LAYER_COLORS: Record<string, string> = {
 };
 
 const LAYER_LABELS: Record<string, string> = {
-  basic: '基础层（必配）',
+  basic: '基础层（必备）',
   core: '核心层（建议）',
   supplement: '补充层（按需）',
 };
+
+function formatPremium(min: number, max: number | null): string {
+  if (max && max > min) {
+    return `¥${min.toLocaleString()}-¥${max.toLocaleString()}`;
+  }
+  return `¥${min.toLocaleString()}`;
+}
 
 interface Props {
   product: ProductItem;
@@ -48,8 +55,14 @@ export default function ProductCard({ product }: Props) {
         <Text type="secondary">{product.company} · {product.type}</Text>
         <span>
           <Text style={{ fontSize: 13 }}>年保费 </Text>
-          <Text strong style={{ fontSize: 15, color: '#1677ff' }}>¥{product.premium.toLocaleString()}</Text>
+          <Text strong style={{ fontSize: 15, color: '#1677ff' }}>{formatPremium(product.premium, product.premium_max)}</Text>
         </span>
+        {product.deductible != null && product.deductible > 0 && (
+          <span>
+            <Text style={{ fontSize: 13 }}>免赔额 </Text>
+            <Text strong>{product.deductible.toLocaleString()}元</Text>
+          </span>
+        )}
         <span>
           <Text style={{ fontSize: 13 }}>保额 </Text>
           <Text strong>{product.sum_insured > 0 ? `${product.sum_insured}万` : '-'}</Text>

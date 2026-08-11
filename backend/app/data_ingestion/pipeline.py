@@ -1,3 +1,5 @@
+import re
+from difflib import SequenceMatcher
 from sqlalchemy.orm import Session
 from backend.app.crawler.scraper import compute_md5
 from backend.app.time import utc_now
@@ -12,6 +14,41 @@ from backend.app.models.data_ingestion import (
     SourcePage,
     SourcePlatform,
 )
+
+MATCH_FUZZY_RATIO = 0.6
+
+
+def _normalize_name(value: str) -> str:
+    return re.sub(r"\s+", "", value or "").lower()
+
+
+def match_product_for_draft(db: Session, draft_data: dict):
+    """Match extracted product data against the existing catalog.
+
+    Exact match: normalized name + company are identical.
+    Fuzzy fallback: same type and name similarity >= MATCH_FUZZY_RATIO.
+    Returns the matched Product or None.
+    """
+    from backend.app.models.product import Product
+
+    name = draft_data.get("name")
+    if not name:
+        return None
+    norm_name = _normalize_name(name)
+    company = draft_data.get("company")
+    norm_company = _normalize_name(company) if company else ""
+    product_type = draft_data.get("type")
+
+    best: Product | None = None
+    best_ratio = MATCH_FUZZY_RATIO
+    for product in db.query(Product).all():
+        if _normalize_name(product.name) == norm_name and _normalize_name(product.company) == norm_company:
+            return product
+        if product_type and product.type == product_type:
+            ratio = SequenceMatcher(None, _normalize_name(product.name), norm_name).ratio()
+            if ratio >= best_ratio:
+                best, best_ratio = product, ratio
+    return best
 
 EVIDENCE_FIELDS = [
     "name",
@@ -124,6 +161,9 @@ def create_extraction_review(
         status="pending_review",
         confidence=confidence,
     )
+    matched = match_product_for_draft(db, extracted_data)
+    if matched is not None:
+        draft.matched_product_id = matched.id
     db.add(draft)
     db.flush()
 

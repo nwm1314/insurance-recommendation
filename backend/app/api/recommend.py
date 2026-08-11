@@ -1,4 +1,3 @@
-import json
 import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -53,6 +52,8 @@ def _run_rule_engine(db: Session, user: UserProfile) -> dict:
             "company": product.company,
             "type": product.type,
             "premium": product.premium_min or 0,
+            "premium_max": product.premium_max or None,
+            "deductible": getattr(product, "deductible", None),
             "sum_insured": product.sum_insured_max or 0,
             "source_url": product.source_url or "",
             "score": detail["total"],
@@ -251,21 +252,6 @@ def recommend(
         save_recommendation_record(db, current_user, request.model_dump(), response)
     return response
 
-
-async def _sse_recommend_stream(user: UserProfile, result: dict):
-    """Safe SSE fallback.
-
-    Legacy streaming rerank is intentionally disabled because it cannot enforce
-    the structured AI schema and product ID whitelist used by the sync AI path.
-    """
-    base = _build_response(user, result, engine_mode="degraded")
-    base["llm_narrative"] = get_fallback_narrative(
-        result["packages"][0].products if result["packages"] else []
-    )
-    yield f"data: {json.dumps(base, ensure_ascii=False)}\n\n"
-    yield "data: [DONE]\n\n"
-
-
 def _build_response(user: UserProfile, result: dict, engine_mode: str = "rule") -> dict:
     budget = result["budget"]
     si = result["sum_insured"]
@@ -294,12 +280,13 @@ def _build_response(user: UserProfile, result: dict, engine_mode: str = "rule") 
                 "tag": p.tag,
                 "tag_label": p.tag_label,
                 "total_premium": p.total_premium,
+                "total_premium_max": p.total_premium_max,
                 "budget_ratio": p.budget_ratio,
                 "products": [
                     {
                         "id": sp.product_id, "name": sp.name, "company": sp.company,
                         "type": sp.type, "layer": sp.layer,
-                        "premium": sp.premium, "sum_insured": sp.sum_insured,
+                        "premium": sp.premium, "premium_max": sp.premium_max, "deductible": sp.deductible, "sum_insured": sp.sum_insured,
                         "source_url": sp.source_url,
                         "score": sp.score, "score_detail": sp.score_detail,
                         "risk_warnings": sp.risk_warnings,

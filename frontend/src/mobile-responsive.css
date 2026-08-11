@@ -1,0 +1,74 @@
+/* Mobile responsive global styles */
+/* 项目未引入 antd reset.css，body 保留浏览器默认 8px 外边距；
+   抽屉打开时 antd scroll-lock 将 body 宽度设为视口宽，8px 外边距会造成横向溢出 */
+body {
+  margin: 0;
+}
+@media (max-width: 576px) {
+  .ant-card { margin-left: 0 !important; margin-right: 0 !important; }
+  .ant-layout-content { padding: 8px !important; }
+  .ant-table-wrapper { overflow-x: auto; }
+  .ant-form-item-label { text-align: left !important; }
+}
+@media (max-width: 768px) {
+  .ant-layout-header { padding: 0 8px !important; }
+  .ant-typography { word-break: break-word; }
+  .ant-space { flex-wrap: wrap; }
+}
+
+/* Mobile hamburger menu */
+.mobile-menu-button {
+  display: none;
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  margin-left: auto;
+}
+.mobile-drawer .ant-drawer-body {
+  padding: 0;
+}
+.mobile-drawer .ant-menu {
+  border-right: none;
+}
+@media (max-width: 768px) {
+  .desktop-menu { display: none !important; }
+  .mobile-menu-button { display: inline-flex !important; align-items: center; }
+
+  /* 结果页头部操作区：标题与操作按钮允许换行，避免 320px 下横向溢出 */
+  .result-header { flex-wrap: wrap; row-gap: 8px; }
+
+  /* 结果页步骤条在窄屏缩小字号，避免标签挤压 */
+  .ant-steps-item-title { font-size: 12px; }
+
+  /* 后台产品抽屉内 Benefit 责任行：固定宽度输入项允许换行堆叠 */
+  .benefit-row { flex-wrap: wrap; row-gap: 8px; }
+  .benefit-row .ant-form-item { margin-bottom: 0; }
+
+  /* 账户页列表操作按钮换行，避免 320px 下溢出 */
+  .ant-list-item { flex-wrap: wrap; row-gap: 8px; }
+  .ant-list-item-action { margin-left: 0; flex-wrap: wrap; row-gap: 4px; }
+
+  /* 后台 inline 表单（新增数据源页面/抓取任务）在窄屏纵向堆叠；
+     覆盖 AdminPage 中 URL 输入项的 minWidth:360 内联样式 */
+  .ant-form-inline .ant-form-item {
+    display: flex;
+    width: 100%;
+    margin-right: 0;
+    min-width: 0 !important;
+  }
+}
+
+@media (max-width: 576px) {
+  /* 后台产品搜索框在窄屏占满可用宽度（覆盖内联 width:300） */
+  .admin-search { width: 100% !important; }
+
+  /* 宽表容器不撑破布局：限制在外层宽度内，由容器自身横向滚动。
+     antd Space 默认 align-items:center，flex 子项不会收缩，
+     需同时约束 .ant-space-item 与 .ant-table-wrapper 的最大宽度 */
+  .ant-table-wrapper { max-width: 100%; }
+  .ant-space-item { min-width: 0; max-width: 100%; }
+
+  /* 卡片标题允许换行，避免长产品名/层级标签在窄屏被截断 */
+  .ant-card-head-title { white-space: normal !important; }
+}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button, Card, Form, Input, Typography, message } from 'antd';
 import { login } from '../api/auth';
@@ -12,7 +12,7 @@ export default function LoginPage() {
   const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || '/account';
 
   return (
-    <Card style={{ maxWidth: 420, margin: '48px auto' }}>
+    <Card style={{ maxWidth: 420, margin: '48px auto', padding: '0 16px' }}>
       <Title level={3}>登录账号</Title>
       <Text type="secondary">登录后可保存推荐历史，并按权限访问管理后台。</Text>
       <Form layout="vertical" style={{ marginTop: 24 }} onFinish={async (values) => {

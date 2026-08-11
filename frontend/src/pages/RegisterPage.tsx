@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button, Card, Form, Input, Typography, message } from 'antd';
 import { register } from '../api/auth';
@@ -10,7 +10,7 @@ export default function RegisterPage() {
   const navigate = useNavigate();
 
   return (
-    <Card style={{ maxWidth: 420, margin: '48px auto' }}>
+    <Card style={{ maxWidth: 420, margin: '48px auto', padding: '0 16px' }}>
       <Title level={3}>注册账号</Title>
       <Text type="secondary">首个注册用户会自动成为管理员；后续用户默认为普通用户。</Text>
       <Form layout="vertical" style={{ marginTop: 24 }} onFinish={async (values) => {

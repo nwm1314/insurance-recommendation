@@ -32,6 +32,8 @@ export interface ProductItem {
   type: string;
   layer: string;
   premium: number;
+  premium_max: number | null;
+  deductible: number | null;
   sum_insured: number;
   source_url: string;
   score: number;
@@ -51,6 +53,7 @@ export interface ComboPackage {
   tag: string;
   tag_label: string;
   total_premium: number;
+  total_premium_max: number | null;
   budget_ratio: number;
   budget_utilization: number;
   completeness_score: number;

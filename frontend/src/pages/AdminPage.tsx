@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
-import { Alert, Button, Card, Col, Drawer, Form, Input, InputNumber, Row, Space, Statistic, Table, Tabs, Typography, message } from 'antd';
+﻿import { useState, useEffect } from 'react';
+import { Alert, Button, Card, Col, Divider, Drawer, Form, Input, InputNumber, Popconfirm, Row, Select, Space, Statistic, Switch, Table, Tabs, Typography, message } from 'antd';
 import apiClient from '../api/client';
-import { fetchProducts } from '../api/products';
+import { fetchProducts, createProduct, updateProduct, deleteProduct, fetchProductDetail } from '../api/products';
+import { createManualExtraction, createPlatform, updatePlatform, deletePlatform } from '../api/ingestion';
 import {
   approveReviewTask,
   createCrawlJob,
@@ -24,6 +25,9 @@ const { Title } = Typography;
 
 export default function AdminPage() {
   const [products, setProducts] = useState<ProductInfo[]>([]);
+  const [productTotal, setProductTotal] = useState(0);
+  const [productPage, setProductPage] = useState(1);
+  const [productPageSize, setProductPageSize] = useState(20);
   const [status, setStatus] = useState<IngestionStatus | null>(null);
   const [platforms, setPlatforms] = useState<SourcePlatform[]>([]);
   const [sourcePages, setSourcePages] = useState<SourcePage[]>([]);
@@ -35,12 +39,120 @@ export default function AdminPage() {
   const [runningJobId, setRunningJobId] = useState<number | null>(null);
   const [sourcePageForm] = Form.useForm();
   const [jobForm] = Form.useForm();
+  const [productForm] = Form.useForm();
+  const [productDrawerOpen, setProductDrawerOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<ProductInfo | null>(null);
+  const [productSearch, setProductSearch] = useState('');
+  const [manualForm] = Form.useForm();
+  const [platformForm] = Form.useForm();
+  const [platformDrawerOpen, setPlatformDrawerOpen] = useState(false);
+  const [editingPlatform, setEditingPlatform] = useState<SourcePlatform | null>(null);
+
+  const handleCreateProduct = async (values: Record<string, unknown>) => {
+    try {
+      if (editingProduct) {
+        const payload: Record<string, unknown> = { ...values };
+        if (Array.isArray(payload.benefits) && payload.benefits.length === 0) {
+          delete payload.benefits;
+        }
+        await updateProduct(editingProduct.id, payload);
+        message.success('产品已更新');
+      } else {
+        await createProduct(values as any);
+        message.success('产品已创建');
+      }
+      setProductDrawerOpen(false);
+      setEditingProduct(null);
+      productForm.resetFields();
+      await load();
+    } catch {
+      message.error('操作失败');
+    }
+  };
+
+  const handleDeleteProduct = async (id: number) => {
+    try {
+      await deleteProduct(id);
+      message.success('产品已删除');
+      await load();
+    } catch {
+      message.error('删除失败');
+    }
+  };
+
+  const openProductDrawer = async (row?: ProductInfo) => {
+    setEditingProduct(row ?? null);
+    if (!row) {
+      productForm.resetFields();
+      setProductDrawerOpen(true);
+      return;
+    }
+    try {
+      const detail = await fetchProductDetail(row.id) as {
+        product: ProductInfo;
+        rule: Record<string, unknown> | null;
+        benefits: Array<Record<string, unknown>>;
+      };
+      const values: Record<string, unknown> = { ...row };
+      if (detail.rule) values.rule = detail.rule;
+      if (detail.benefits?.length) values.benefits = detail.benefits;
+      productForm.setFieldsValue(values);
+    } catch {
+      productForm.setFieldsValue(row);
+    }
+    setProductDrawerOpen(true);
+  };
+
+  const handleCreatePlatform = async (values: Record<string, unknown>) => {
+    try {
+      if (editingPlatform) {
+        await updatePlatform(editingPlatform.id, values as any);
+        message.success('平台已更新');
+      } else {
+        await createPlatform(values as any);
+        message.success('平台已创建');
+      }
+      setPlatformDrawerOpen(false);
+      setEditingPlatform(null);
+      platformForm.resetFields();
+      await load();
+    } catch {
+      message.error('操作失败');
+    }
+  };
+
+  const handleDeletePlatform = async (id: number) => {
+    try {
+      await deletePlatform(id);
+      message.success('平台已删除');
+      await load();
+    } catch {
+      message.error('删除失败');
+    }
+  };
+
+  const handleManualExtraction = async (values: Record<string, unknown>) => {
+    try {
+      await createManualExtraction({
+        source_page_id: values.source_page_id as number,
+        text: values.text as string,
+        html: values.html as string | undefined,
+        extracted_data: JSON.parse(values.extracted_data as string),
+        confidence: values.confidence as number | undefined,
+      });
+      message.success('手动录入已提交，请等待审核');
+      manualForm.resetFields();
+    } catch {
+      message.error('提交失败，请检查数据格式');
+    }
+  };
 
   const load = async () => {
     setLoading(true);
     try {
-      const data = await fetchProducts();
-      setProducts(data);
+      const result = await fetchProducts(undefined, productPage, productPageSize, productSearch || undefined);
+      setProducts(result.products);
+      setProductTotal(result.total);
       const [ingestionStatus, sourcePlatforms, pages, crawlJobs, crawlRuns, tasks] = await Promise.all([
         fetchIngestionStatus(),
         fetchSourcePlatforms(),
@@ -62,7 +174,7 @@ export default function AdminPage() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [productPage, productPageSize, productSearch]);
 
   const columns: ColumnsType<ProductInfo> = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
@@ -75,6 +187,15 @@ export default function AdminPage() {
     },
     { title: '最低保费', dataIndex: 'premium_min', key: 'premium_min', width: 100 },
     { title: '最高保额', dataIndex: 'sum_insured_max', key: 'sum_insured_max', width: 100 },
+    {
+      title: '操作', key: 'action', width: 180,
+      render: (_, row) => <Space>
+        <Button size="small" onClick={() => openProductDrawer(row)}>编辑</Button>
+        <Popconfirm title="确认删除该产品？" onConfirm={() => handleDeleteProduct(row.id)}>
+          <Button size="small" danger>删除</Button>
+        </Popconfirm>
+      </Space>,
+    },
   ];
 
   const platformColumns: ColumnsType<SourcePlatform> = [
@@ -83,6 +204,19 @@ export default function AdminPage() {
     { title: '类型', dataIndex: 'platform_type', key: 'platform_type', width: 120 },
     { title: '基础 URL', dataIndex: 'base_url', key: 'base_url' },
     { title: '限速秒数', dataIndex: 'rate_limit_seconds', key: 'rate_limit_seconds', width: 100 },
+    {
+      title: '操作', key: 'action', width: 180,
+      render: (_, row) => <Space>
+        <Button size="small" onClick={() => {
+          setEditingPlatform(row);
+          platformForm.setFieldsValue(row);
+          setPlatformDrawerOpen(true);
+        }}>编辑</Button>
+        <Popconfirm title="确认删除该平台？" onConfirm={() => handleDeletePlatform(row.id)}>
+          <Button size="small" danger>删除</Button>
+        </Popconfirm>
+      </Space>,
+    },
   ];
 
   const jobColumns: ColumnsType<CrawlJob> = [
@@ -169,7 +303,13 @@ export default function AdminPage() {
           {
             key: 'products',
             label: '产品管理',
-            children: <Table columns={columns} dataSource={products} rowKey="id" loading={loading} size="small" pagination={{ pageSize: 20 }} />,
+            children: (<Space direction="vertical" style={{ width: '100%' }}>
+              <Space>
+              <Input.Search className="admin-search" placeholder="搜索产品名称或公司" allowClear onSearch={setProductSearch} style={{ width: 300 }} />
+              <Button type="primary" onClick={() => { setEditingProduct(null); productForm.resetFields(); setProductDrawerOpen(true); }}>新增产品</Button>
+            </Space>
+              <Table columns={columns} dataSource={products} rowKey="id" loading={loading} size="small" scroll={{ x: 800 }} pagination={{ current: productPage, pageSize: productPageSize, total: productTotal, showSizeChanger: true, onChange: (page, pageSize) => { setProductPage(page); setProductPageSize(pageSize); } }} />
+            </Space>),
           },
           {
             key: 'ingestion',
@@ -177,15 +317,18 @@ export default function AdminPage() {
             children: (
               <div>
                 <Row gutter={12} style={{ marginBottom: 16 }}>
-                  <Col span={4}><Statistic title="平台" value={status?.source_platforms || 0} /></Col>
-                  <Col span={4}><Statistic title="页面" value={status?.source_pages || 0} /></Col>
-                  <Col span={4}><Statistic title="任务" value={status?.crawl_jobs || 0} /></Col>
-                  <Col span={4}><Statistic title="运行" value={status?.crawl_runs || 0} /></Col>
-                  <Col span={4}><Statistic title="草稿" value={status?.product_drafts || 0} /></Col>
-                  <Col span={4}><Statistic title="审核" value={status?.review_tasks || 0} /></Col>
+                  <Col xs={8} sm={4}><Statistic title="平台" value={status?.source_platforms || 0} /></Col>
+                  <Col xs={8} sm={4}><Statistic title="页面" value={status?.source_pages || 0} /></Col>
+                  <Col xs={8} sm={4}><Statistic title="任务" value={status?.crawl_jobs || 0} /></Col>
+                  <Col xs={8} sm={4}><Statistic title="运行" value={status?.crawl_runs || 0} /></Col>
+                  <Col xs={8} sm={4}><Statistic title="草稿" value={status?.product_drafts || 0} /></Col>
+                  <Col xs={8} sm={4}><Statistic title="审核" value={status?.review_tasks || 0} /></Col>
                 </Row>
                 <Card size="small" title="数据源平台" style={{ marginBottom: 16 }}>
-                  <Table columns={platformColumns} dataSource={platforms} rowKey="id" loading={loading} size="small" pagination={false} />
+                  <Space style={{ marginBottom: 8 }}>
+                  <Button type="primary" onClick={() => { setEditingPlatform(null); platformForm.resetFields(); setPlatformDrawerOpen(true); }}>新增平台</Button>
+                </Space>
+                <Table columns={platformColumns} dataSource={platforms} rowKey="id" loading={loading} size="small" pagination={false} />
                 </Card>
                 <Card size="small" title="新增数据源页面" style={{ marginBottom: 16 }}>
                   <Form form={sourcePageForm} layout="inline" onFinish={async (values) => {
@@ -227,9 +370,192 @@ export default function AdminPage() {
               </div>
             ),
           },
+          {
+            key: 'manual',
+            label: '手动录入',
+            children: (
+              <Card size="small" title="手动录入产品数据">
+                <Form
+                  form={manualForm}
+                  layout="vertical"
+                  onFinish={handleManualExtraction}
+                >
+                  <Form.Item name="source_page_id" label="数据源页面 ID" rules={[{ required: true }]}>
+                    <InputNumber placeholder="输入页面 ID" min={1} style={{ width: '100%' }} />
+                  </Form.Item>
+                  <Form.Item name="text" label="文本内容" rules={[{ required: true }]}>
+                    <Input.TextArea rows={4} placeholder="输入产品文本内容" />
+                  </Form.Item>
+                  <Form.Item name="html" label="HTML 内容（可选）">
+                    <Input.TextArea rows={4} placeholder="输入原始 HTML" />
+                  </Form.Item>
+                  <Form.Item name="extracted_data" label="提取数据（JSON 格式）" rules={[{ required: true }]}>
+                    <Input.TextArea rows={6} placeholder='{"name": "产品名", "company": "公司名", "type": "医疗险"}' />
+                  </Form.Item>
+                  <Form.Item name="confidence" label="置信度" initialValue={0.5}>
+                    <InputNumber min={0} max={1} step={0.1} style={{ width: '100%' }} />
+                  </Form.Item>
+                  <Button type="primary" htmlType="submit">提交录入</Button>
+                </Form>
+              </Card>
+            ),
+          },
         ]}
       />
-      <Drawer title="审核详情" width={720} open={!!reviewDetail} onClose={() => setReviewDetail(null)}>
+      <Drawer
+        title={editingProduct ? '编辑产品' : '新增产品'}
+        width="min(600px, 100vw)"
+        open={productDrawerOpen}
+        onClose={() => { setProductDrawerOpen(false); setEditingProduct(null); }}
+        footer={null}
+      >
+        <Form
+          form={productForm}
+          layout="vertical"
+          onFinish={handleCreateProduct}
+        >
+          <Form.Item name="name" label="产品名称" rules={[{ required: true }]}>
+            <Input placeholder="如：平安福终身寿险" />
+          </Form.Item>
+          <Form.Item name="company" label="保险公司" rules={[{ required: true }]}>
+            <Input placeholder="如：中国平安" />
+          </Form.Item>
+          <Form.Item name="type" label="险种" rules={[{ required: true }]}>
+            <Select placeholder="选择险种">
+              <Select.Option value="医疗险">医疗险</Select.Option>
+              <Select.Option value="意外险">意外险</Select.Option>
+              <Select.Option value="重疾险">重疾险</Select.Option>
+              <Select.Option value="定期寿险">定期寿险</Select.Option>
+              <Select.Option value="防癌险">防癌险</Select.Option>
+              <Select.Option value="年金险">年金险</Select.Option>
+            </Select>
+          </Form.Item>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="premium_min" label="最低保费">
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="premium_max" label="最高保费">
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="sum_insured_min" label="最低保额">
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="sum_insured_max" label="最高保额">
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name="source_url" label="来源URL">
+            <Input placeholder="https://example.com" />
+          </Form.Item>
+          <Form.Item name="deductible" label="免赔额">
+            <InputNumber min={0} style={{ width: '100%' }} />
+          </Form.Item>
+          <Divider orientation="left" plain>投保规则（Rule）</Divider>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name={['rule', 'min_age']} label="最小投保年龄" initialValue={0}>
+                <InputNumber min={0} max={120} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name={['rule', 'max_age']} label="最大投保年龄" initialValue={100}>
+                <InputNumber min={0} max={120} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name={['rule', 'job_class_limit']} label="职业等级上限" initialValue={6}>
+                <InputNumber min={1} max={6} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name={['rule', 'waiting_period_days']} label="等待期(天)" initialValue={90}>
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name={['rule', 'has_insured_waiver']} label="被保险人豁免" valuePropName="checked" initialValue={false}>
+            <Switch />
+          </Form.Item>
+          <Form.Item name={['rule', 'has_insurer_waiver']} label="保险人豁免" valuePropName="checked" initialValue={false}>
+            <Switch />
+          </Form.Item>
+          <Divider orientation="left" plain>保障责任（Benefit）</Divider>
+          <Form.List name="benefits">
+            {(fields, { add, remove }) => (
+              <>
+                {fields.map(({ key, name, ...restField }) => (
+                  <Space className="benefit-row" key={key} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
+                    <Form.Item {...restField} name={[name, 'benefit_name']} rules={[{ required: true, message: '责任名称必填' }]}>
+                      <Input placeholder="责任名称" style={{ width: 140 }} />
+                    </Form.Item>
+                    <Form.Item {...restField} name={[name, 'benefit_type']}>
+                      <Select placeholder="类型" style={{ width: 100 }} options={[
+                        { value: 'basic', label: '基本' },
+                        { value: 'special', label: '特别' },
+                      ]} />
+                    </Form.Item>
+                    <Form.Item {...restField} name={[name, 'benefit_amount']}>
+                      <Input placeholder="保额/金额" style={{ width: 120 }} />
+                    </Form.Item>
+                    <Form.Item {...restField} name={[name, 'payment_limit']}>
+                      <Input placeholder="给付限额" style={{ width: 120 }} />
+                    </Form.Item>
+                    <Button type="text" danger onClick={() => remove(name)}>删除</Button>
+                  </Space>
+                ))}
+                <Button type="dashed" onClick={() => add({ benefit_type: 'basic' })} block style={{ marginBottom: 8 }}>添加责任</Button>
+              </>
+            )}
+          </Form.List>
+          <Button type="primary" htmlType="submit">保存</Button>
+        </Form>
+      </Drawer>
+      <Drawer
+        title={editingPlatform ? '编辑平台' : '新增平台'}
+        width="min(520px, 100vw)"
+        open={platformDrawerOpen}
+        onClose={() => { setPlatformDrawerOpen(false); setEditingPlatform(null); }}
+        footer={null}
+      >
+        <Form
+          form={platformForm}
+          layout="vertical"
+          onFinish={handleCreatePlatform}
+        >
+          <Form.Item name="name" label="平台名称" rules={[{ required: true }]}>
+            <Input placeholder="如：中国保险协会" />
+          </Form.Item>
+          <Form.Item name="platform_type" label="平台类型" initialValue="third_party">
+            <Input placeholder="third_party / official / aggregator" />
+          </Form.Item>
+          <Form.Item name="base_url" label="基础 URL">
+            <Input placeholder="https://example.com" />
+          </Form.Item>
+          <Form.Item name="robots_url" label="Robots URL">
+            <Input placeholder="https://example.com/robots.txt" />
+          </Form.Item>
+          <Form.Item name="rate_limit_seconds" label="限速秒数" initialValue={1}>
+            <InputNumber min={0} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="is_active" label="是否激活" initialValue={1} valuePropName="checked">
+            <input type="checkbox" />
+          </Form.Item>
+          <Button type="primary" htmlType="submit">保存</Button>
+        </Form>
+      </Drawer>
+      <Drawer title="审核详情" width="min(720px, 100vw)" open={!!reviewDetail} onClose={() => setReviewDetail(null)}>
         {reviewDetail && <Space direction="vertical" style={{ width: '100%' }} size="middle">
           <Alert type="info" showIcon message={`状态：${reviewDetail.status}，置信度：${reviewDetail.confidence?.toFixed(2) ?? '-'}`} />
           <Card size="small" title="抽取草稿"><pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(reviewDetail.draft, null, 2)}</pre></Card>

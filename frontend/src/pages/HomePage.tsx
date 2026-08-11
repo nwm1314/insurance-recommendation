@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Form, InputNumber, Select, Radio, Checkbox, Slider, Button, Card, Space, Typography, Row, Col, Divider, Tag, Tooltip } from 'antd';
+﻿import { useState, useEffect } from 'react';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { Form, InputNumber, Select, Radio, Checkbox, Slider, Button, Card, Space, Typography, Row, Col, Divider, Tag, Tooltip, Alert, message } from 'antd';
 import { QuestionCircleOutlined } from '@ant-design/icons';
 import ProgressSteps from '../components/ProgressSteps';
 import EngineSwitch from '../components/EngineSwitch';
+import { fetchProfileDetail } from '../api/auth';
 import type { UserProfile } from '../types';
 
 const { Title, Text } = Typography;
@@ -159,6 +160,66 @@ export default function HomePage() {
   const [budgetRatio, setBudgetRatio] = useState(0.08);
   const [form] = Form.useForm();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+
+  // 已选健康项中未被后端识别的项：显式提示，不静默忽略（仅作记录，不作承保判断）
+  const healthIssues: string[] = Form.useWatch('health_issues', form) || [];
+  const unknownHealthItems = healthIssues.filter(
+    (v: string) => !HEALTH_OPTIONS.some((o) => o.value === v)
+  );
+
+  const fillProfile = (profile: Record<string, unknown>) => {
+    form.setFieldsValue({
+      age: typeof profile.age === 'number' ? profile.age : undefined,
+      gender: profile.gender,
+      life_stage: profile.life_stage,
+      family_burden: profile.family_burden,
+      job_class: typeof profile.job_class === 'number' ? profile.job_class : undefined,
+      existing_coverage: Array.isArray(profile.existing_coverage) ? profile.existing_coverage : [],
+      health_status: profile.health_status,
+      health_issues: Array.isArray(profile.health_issues) ? profile.health_issues : [],
+      preferred_companies: Array.isArray(profile.preferred_companies) ? profile.preferred_companies : [],
+      preferred_type: typeof profile.preferred_type === 'string' ? profile.preferred_type : undefined,
+    });
+    if (typeof profile.annual_income === 'number') {
+      setIncome(profile.annual_income);
+    }
+    if (typeof profile.budget_ratio === 'number') {
+      setBudgetRatio(profile.budget_ratio);
+    }
+    if (typeof profile.enable_llm_engine === 'boolean') {
+      setAiMode(profile.enable_llm_engine);
+    }
+  };
+
+  useEffect(() => {
+    const stateProfile = location.state?.profile as Record<string, unknown> | undefined;
+    if (stateProfile) {
+      fillProfile(stateProfile);
+      message.info('已加载保存的画像，请确认后提交');
+      return;
+    }
+    const profileId = searchParams.get('profileId');
+    if (!profileId) return;
+    (async () => {
+      try {
+        const detail = await fetchProfileDetail(Number(profileId));
+        fillProfile(detail.profile);
+        message.info(`已加载画像“${detail.name}”，请确认后提交`);
+      } catch (err: unknown) {
+        const status = (err as { response?: { status?: number } }).response?.status;
+        if (status === 404) {
+          message.error('画像不存在或已被删除');
+        } else if (status === 403) {
+          message.error('您无权访问该画像');
+        } else {
+          message.error('画像加载失败，请稍后重试');
+        }
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSubmit = async () => {
     try {
@@ -184,6 +245,7 @@ export default function HomePage() {
         health_status: values.health_status as string,
         health_issues: (values.health_issues as string[]) || [],
         existing_coverage: (values.existing_coverage as string[]) || [],
+        preferred_type: (values.preferred_type as string) || undefined,
         budget_ratio: budgetRatio,
         preferred_companies: dbCompanies,
         enable_llm_engine: aiMode,
@@ -207,7 +269,7 @@ export default function HomePage() {
     <Card style={{ maxWidth: 760, margin: '32px auto' }}>
       <Title level={3} style={{ textAlign: 'center', marginBottom: 4 }}>智能保险推荐</Title>
       <Text type="secondary" style={{ display: 'block', textAlign: 'center', marginBottom: 16 }}>
-        1分钟填写 · 3套方案 · 全网产品智能匹配
+        1分钟填写 · 3套方案 · 规则引擎按年龄、职业与预算筛选
       </Text>
       <ProgressSteps current={step} />
 
@@ -219,12 +281,12 @@ export default function HomePage() {
         {/* Step 0: Basic info */}
         <div style={{ display: step === 0 ? 'block' : 'none' }}>
           <Row gutter={16}>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="age" label="年龄" rules={[{ required: true, message: '请输入年龄' }]}>
                 <InputNumber min={0} max={120} style={{ width: '100%' }} placeholder="0-120" />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="gender" label="性别" rules={[{ required: true }]}>
                 <Radio.Group>
                   <Radio.Button value="male">男</Radio.Button>
@@ -342,6 +404,15 @@ export default function HomePage() {
               }}
             />
           </Form.Item>
+          {unknownHealthItems.length > 0 && (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message="以下健康项暂未被系统识别"
+              description={`${unknownHealthItems.join('、')}：该健康项本次仅作记录展示，不参与规则筛选，也不构成承保判断；如需核保结论，请以产品健康告知和保险公司核保为准。`}
+            />
+          )}
         </div>
 
         {/* Step 3: Preference confirm */}
@@ -350,6 +421,22 @@ export default function HomePage() {
             <Space direction="vertical" size="large" style={{ width: '100%' }}>
               <Text type="secondary">最后一步：选择推荐模式并确认偏好</Text>
               <EngineSwitch enabled={aiMode} onChange={setAiMode} />
+
+              <Form.Item name="preferred_type" label={
+                <span>偏好险种 <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>（可选，优先配置该险种，不改变硬性规则）</Text></span>
+              } style={{ textAlign: 'left' }}>
+                <Select
+                  allowClear
+                  placeholder="选择优先考虑的险种（可选）"
+                  options={[
+                    { label: '医疗险', value: '医疗险' },
+                    { label: '意外险', value: '意外险' },
+                    { label: '重疾险', value: '重疾险' },
+                    { label: '定期寿险', value: '定期寿险' },
+                    { label: '防癌险', value: '防癌险' },
+                  ]}
+                />
+              </Form.Item>
 
               <Form.Item name="preferred_companies" label={
                 <span>偏好保险公司 <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>（可选，选择后优先推荐该公司产品）</Text></span>
@@ -387,17 +474,18 @@ export default function HomePage() {
 
               <Card size="small" style={{ textAlign: 'left' }}>
                 <Row gutter={16}>
-                  <Col span={12}>
+                  <Col xs={24} sm={12}>
                     <Text strong>预算概况</Text>
                     <p style={{ margin: '4px 0' }}>年收入：<Text strong>¥{income.toLocaleString()}</Text></p>
                     <p style={{ margin: '4px 0' }}>保费预算：<Text strong style={{ color: '#1890ff' }}>¥{(income * budgetRatio).toLocaleString()}/年</Text>（占比 {(budgetRatio * 100).toFixed(0)}%）</p>
                   </Col>
-                  <Col span={12}>
+                  <Col xs={24} sm={12}>
                     <Text strong>保障范围</Text>
-                    <p style={{ margin: '4px 0' }}>医疗险 + 意外险 + 重疾险 + 定期寿险</p>
+                    <p style={{ margin: '4px 0' }}>参考险种：医疗险 / 意外险 / 重疾险 / 定期寿险 / 防癌险</p>
+                    <p style={{ margin: '4px 0' }}>（按年龄、职业与预算动态组合，以推荐结果为准）</p>
                     <p style={{ margin: '4px 0' }}>
                       推荐模式：
-                      <Tag color={aiMode ? 'blue' : 'green'}>{aiMode ? 'AI 专家' : '极速规则'}</Tag>
+                      <Tag color={aiMode ? 'blue' : 'green'}>{aiMode ? 'AI 解释' : '极速规则'}</Tag>
                     </p>
                   </Col>
                 </Row>
@@ -405,7 +493,7 @@ export default function HomePage() {
               {aiMode && (
                 <Card size="small" style={{ background: '#e6f7ff', border: '1px solid #91d5ff' }}>
                   <Text style={{ fontSize: 13 }}>
-                    AI 模式将调用大模型对候选产品进行语义精排，生成个性化推荐语，响应时间约 10-30 秒
+                    AI 模式将调用大模型，解释规则引擎已选出的方案（AI 不参与选品与排序），响应时间约 10-30 秒
                   </Text>
                 </Card>
               )}

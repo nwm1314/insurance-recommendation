@@ -9,7 +9,6 @@ export interface IngestionStatus {
   product_drafts: number;
   review_tasks: number;
 }
-
 export interface SourcePlatform {
   id: number;
   name: string;
@@ -19,14 +18,12 @@ export interface SourcePlatform {
   rate_limit_seconds: number;
   is_active: boolean;
 }
-
 export interface CrawlJob {
   id: number;
   name: string;
   source_page_id: number;
   status: string;
 }
-
 export interface SourcePage {
   id: number;
   platform_id: number;
@@ -35,7 +32,6 @@ export interface SourcePage {
   is_active: boolean;
   last_crawled_at: string | null;
 }
-
 export interface CrawlRun {
   id: number;
   crawl_job_id: number;
@@ -133,5 +129,48 @@ export async function approveReviewTask(taskId: number, note?: string) {
 
 export async function rejectReviewTask(taskId: number, note?: string) {
   const { data } = await apiClient.post(`/admin/ingestion/review-tasks/${taskId}/reject`, { note });
+  return data;
+}
+
+export async function createPlatform(payload: {
+  name: string;
+  platform_type?: string;
+  base_url?: string;
+  robots_url?: string;
+  rate_limit_seconds?: number;
+  is_active?: boolean;
+}) {
+  const { data } = await apiClient.post('/admin/ingestion/platforms', payload);
+  return data;
+}
+
+export async function updatePlatform(
+  platformId: number,
+  payload: Partial<{
+    name: string;
+    platform_type: string;
+    base_url: string;
+    robots_url: string;
+    rate_limit_seconds: number;
+    is_active: boolean;
+  }>
+) {
+  const { data } = await apiClient.put(`/admin/ingestion/platforms/${platformId}`, payload);
+  return data;
+}
+
+export async function deletePlatform(platformId: number) {
+  const { data } = await apiClient.delete(`/admin/ingestion/platforms/${platformId}`);
+  return data;
+}
+
+export async function createManualExtraction(payload: {
+  source_page_id: number;
+  text: string;
+  html?: string;
+  extracted_data: Record<string, unknown>;
+  confidence?: number;
+}) {
+  const { data } = await apiClient.post('/admin/ingestion/manual-extractions', payload);
   return data;
 }

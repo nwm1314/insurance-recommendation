@@ -5,23 +5,23 @@
 ## 架构概览
 
 ```
-用户问卷(七维画像) → 规则树粗筛(一票否决) → 6维评分算法 → 贪心套餐构建 → 双引擎路由
+用户问卷(七维画像) → 规则树粗筛(一票否决) → 8维评分算法 → 贪心套餐构建 → 双引擎路由
                                                                           ├─ 极速模式: 直接输出 (<1s)
-                                                                          └─ AI 模式: LLM精排 + SSE流式推荐语
+                                                                          └─ AI 模式: LLM解释规则引擎已选方案（同步 JSON）
 ```
 
-- **数据采集层**: Playwright 爬虫 + Instructor 大模型结构化提取
-- **推荐引擎层**: 规则引擎（合规防线）+ AI 引擎（个性化精排）
+- **数据采集层**: Playwright/BeautifulSoup 抓取 + OpenAI-compatible LLM 提取 + Pydantic 校验
+- **推荐引擎层**: 规则引擎（合规筛选/评分/组包）+ AI 引擎（对已选方案做解释）
 - **网关防护层**: Redis 令牌桶限流 + 熔断降级
 
 ## 功能特性
 
 - **七维用户画像**: 年龄、人生阶段、收入、职业风险、健康状态、家庭负担、已有保障
 - **一票否决机制**: 年龄不符、职业超限、停售产品自动剔除；0-17 岁禁推寿险，55 岁以上替换防癌险
-- **6 维产品评分**: 保障全面性(20%)、保费竞争力(18%)、投保宽松度(15%)、等待期(10%)、豁免条款(10%)、保额充足度(10%)、品牌信任度(10%)、增值服务(7%)
+- **8 维产品评分**: 保障全面性(20%)、保费竞争力(18%)、投保宽松度(15%)、等待期(10%)、豁免条款(10%)、保额充足度(10%)、品牌信任度(10%)、增值服务(7%)
 - **智能预算分配**: 按收入层级自动分配医疗/意外/重疾/寿险预算比例
 - **三层套餐方案**: 极致性价比 / 全面保障 / 尊享无忧，贪心算法在预算约束下自动组合
-- **双引擎路由**: 极速规则模式（<1s 响应）与 AI 专家模式（SSE 流式推荐语）
+- **双引擎路由**: 极速规则模式与 AI 专家模式（同步 JSON 解释）；AI 不得新增或替换规则引擎选出的产品
 - **熔断降级**: LLM 异常时静默切换至极速模式，保证核心业务流程不中断
 - **健康告知预警**: 异常项标红提示，引导智能核保
 - **产品横向对比**: 高亮保费差异与保障差异，保费倒挂预警
@@ -33,7 +33,7 @@
 | 前端 | React 18 + TypeScript + Ant Design 5 + Vite |
 | 后端 | FastAPI + SQLAlchemy + Pydantic + APScheduler |
 | 爬虫 | Playwright + BeautifulSoup4 |
-| AI | Instructor + OpenAI 兼容接口（支持 DeepSeek 等国产模型） |
+| AI | OpenAI 兼容接口 + Pydantic 结构化校验（支持 DeepSeek 等模型） |
 | 存储 | SQLite（开发期）+ Redis（限流） |
 | 部署 | Docker Compose（后端 + 前端 Nginx + Redis） |
 
@@ -47,7 +47,7 @@ insurance_recommendation/
 │   ├── Dockerfile
 │   ├── app/
 │   │   ├── api/                    # REST API 路由
-│   │   │   ├── recommend.py        # POST /api/recommend (含 SSE 流式)
+│   │   │   ├── recommend.py        # POST /api/recommend（同步 JSON）
 │   │   │   ├── products.py         # GET /api/products, /api/compare
 │   │   │   └── admin.py            # 爬虫触发 & 健康检查
 │   │   ├── engine/                 # 推荐引擎核心
@@ -55,10 +55,10 @@ insurance_recommendation/
 │   │   │   ├── scoring.py          # 8 维产品评分算法
 │   │   │   ├── budget.py           # 预算分配 & 保额计算
 │   │   │   ├── combo_builder.py    # 贪心套餐组合构建
-│   │   │   ├── ai_engine.py        # LLM 精排 + SSE 流式
+│   │   │   ├── ai_engine.py        # LLM 解释 + JSON/白名单校验
 │   │   │   ├── fallback.py         # 熔断降级
 │   │   │   └── models.py           # 引擎内部数据类
-│   │   ├── crawler/                # Playwright 爬虫 + Instructor 结构化
+│   │   ├── crawler/                # Playwright/BeautifulSoup + LLM 提取
 │   │   ├── models/                 # SQLAlchemy ORM
 │   │   ├── schemas/                # Pydantic 校验
 │   │   ├── services/               # 业务逻辑
@@ -86,7 +86,6 @@ insurance_recommendation/
 │   │   │   ├── HomePage.tsx         # 4 步骤七维画像问卷
 │   │   │   ├── ResultPage.tsx       # 推荐结果 & 横向对比
 │   │   │   └── AdminPage.tsx        # 管理后台
-│   │   ├── hooks/useSSE.ts         # SSE 流式读取 Hook
 │   │   ├── api/                    # Axios 封装
 │   │   └── types/                  # TypeScript 类型定义
 │   ├── nginx.conf                  # 生产环境 Nginx 配置
@@ -143,6 +142,16 @@ npm install
 npm run dev  # http://localhost:3000
 ```
 
+### 管理员初始化
+
+公开注册的用户只获得普通 `user` 角色。首个管理员通过环境变量受控创建（幂等，已存在则不重复创建，创建动作写入审计日志 `auth.first_admin.bootstrap`，密码不写入日志；创建完成后建议清空 `FIRST_ADMIN_PASSWORD`）：
+
+```bash
+FIRST_ADMIN_EMAIL=admin@example.com FIRST_ADMIN_PASSWORD=强密码 python -m uvicorn main:app --reload
+```
+
+之后由既有管理员通过 `POST /api/admin/users/{user_id}/roles`（请求体 `{"roles": ["admin"]}`，需 `admin:grant` 权限）授予其他管理员，操作同样写入审计日志。
+
 ### 环境变量
 
 | 变量 | 默认值 | 说明 |
@@ -155,12 +164,27 @@ npm run dev  # http://localhost:3000
 | `LLM_MAX_TOKENS` | `2048` | 结构化 AI 输出上限 |
 | `LLM_READ_TIMEOUT` | `90.0` | LLM 读取超时（秒） |
 
+### 安全配置
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `APP_ENV` | `development` | `development\|test\|staging\|production`；`production` 下 `COOKIE_SECURE` 强制为 true |
+| `COOKIE_SECURE` | 按环境推断 | httpOnly Cookie 的 Secure 标志；不设置时 production 自动为 true，显式设 false 且 APP_ENV=production 会启动失败 |
+| `COOKIE_SAMESITE` | `lax` | `lax\|strict\|none`；`none` 必须配合 `COOKIE_SECURE=true`。SameSite=Lax 是本项目对 CSRF 的主要处置 |
+| `TRUST_PROXY_HEADERS` | `false` | 为 true 且直连对端命中 `TRUSTED_PROXIES` 时才解析 `X-Forwarded-For`，否则一律用直连地址，伪造 XFF 无效 |
+| `TRUSTED_PROXIES` | 空 | 可信代理列表（IP 或 CIDR，逗号分隔），格式非法启动报错 |
+| `SECURITY_HEADERS` | `true` | 安全响应头开关（nosniff / X-Frame-Options / Referrer-Policy / CSP） |
+| `HSTS_ENABLED` | `false` | 发送 `Strict-Transport-Security`，仅 `APP_ENV=production` 时生效 |
+| `CORS_ALLOW_ORIGINS` | `http://localhost,http://localhost:3000,http://127.0.0.1:3000` | 逗号分隔的显式来源白名单（http/https，可含端口）；禁止带路径/查询串；`APP_ENV=production` 拒绝 `*`，且任何环境 `*` 都不能与 `allow_credentials=True`（Cookie 认证必需）并用 |
+
+Cookie 登录用户计入用户级限流（限流优先解析 Bearer 头，其次解析 `access_token` Cookie）。详见 `docs/docker-deployment.md` 的“安全配置”章节。
+
 ## API 端点
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `POST` | `/api/recommend` | 提交七维画像，返回套餐方案（支持 SSE 流式） |
-| `GET` | `/api/products` | 产品列表（支持 `?type=` 筛选） |
+| `POST` | `/api/recommend` | 提交七维画像，返回同步 JSON 套餐方案（AI 模式为解释性补充） |
+| `GET` | `/api/products` | 产品列表（支持分页、`type`、名称/公司搜索） |
 | `GET` | `/api/products/{id}` | 产品详情 + 保障责任明细 |
 | `POST` | `/api/compare` | 多产品横向对比 |
 | `POST` | `/api/admin/crawl` | 手动触发爬虫 |
@@ -194,7 +218,8 @@ npm run dev  # http://localhost:3000
 - status = 0（停售）→ 剔除
 - 0-17 岁 + 寿险 → 绝对不推
 - 55 岁以上 + 重疾险 → 替换为防癌险
-- 保费 > 年收入 10% → 剔除
+- 报价下限超过对应险种预算 → 剔除
+- 套餐组装同时检查已知报价上限；未披露上限的产品标记“起/以核保为准”，不被伪装成精确价格
 
 输出 10-20 款合法合规的「安全候选池」。
 
@@ -209,24 +234,28 @@ npm run dev  # http://localhost:3000
 ### 第四层：双引擎路由
 
 - **极速模式** (`enable_llm_engine: false`): 规则树 → 评分 → 套餐组合 → 直接输出，1 秒内响应
-- **AI 模式** (`enable_llm_engine: true`): 规则树 → 评分 → 套餐组合 → LLM 精选 3-4 款 + 200 字推荐语（SSE 流式打字机效果）
+- **AI 模式** (`enable_llm_engine: true`): 规则树 → 评分 → 套餐组合 → LLM 对已选产品生成结构化解释；产品 ID 受输入白名单约束，不能新增/替换产品。当前接口为同步 JSON，不提供 SSE
 - **降级**: LLM 异常 → 静默切换极速模式，提示「AI 线路繁忙，已自动切换至极速专家推荐」
 
 ## 高可用设计
 
-- **限流**: 10 次/分钟/IP，3 次/分钟/用户，50 次/天/用户（Redis 令牌桶），Redis 不可用时自动放行
-- **超时**: LLM 连接 3s，读取 15-30s，前端总超时 35s
+- **限流**: 默认 120 次/分钟/IP、30 次/分钟/用户、300 次/天/用户（Redis 计数器）；Redis 不可用时当前实现放行并记录运行风险
+- **超时**: LLM 连接默认 3s、读取默认 90s；实际值由 `LLM_CONNECT_TIMEOUT` / `LLM_READ_TIMEOUT` 配置
 - **熔断降级**: LLM 异常静默切换极速模式，核心业务流程不中断
 
 ## 数据采集 Pipeline
 
 ```
-Playwright 抓取 HTML → 提取纯文本 → Instructor + Pydantic 强制 JSON Mode → 入库
-                                                                              ↓
-                                                                     MD5 增量比对（周检）
-                                                                              ↓
-                                                                 变更触发重新解析 / 下架标记
+配置的数据源页面 → SSRF/robots 校验 → 抓取 HTML/纯文本 → MD5 比对（内容未变化则跳过）
+                                                        ↓
+                         OpenAI-compatible LLM 提取 + Pydantic 白名单校验
+                                                        ↓
+                  `pending_review` → 管理员审核发布 Product/Rule/Benefit/Version
+                                                        ↓
+           识别停售/不可投保页面后生成下架审核任务；调度间隔由 `CRAWL_INTERVAL_MINUTES` 控制
 ```
+
+采集结果不会直接进入推荐池；只有审核发布后的产品才可被推荐。开发环境首次启动会在空目录时补充种子目录，种子数据不代表实时市场报价。系统不提供实时核保或保险公司报价 API，保费区间、健康匹配和保额均为辅助信息，最终以保险公司官方条款、健康告知和核保结果为准。
 
 ## 免责声明
 

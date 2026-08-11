@@ -1,5 +1,7 @@
 # 智能保险推荐工具 — 实施计划
 
+> 历史实施计划（2026-05-24）。本文件记录当时的拟议步骤，未完成的计划不可视为已交付；当前实现和限制以代码、测试和最新任务卡为准。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 从零构建智能保险推荐全栈系统（React 前端 + FastAPI 后端 + 爬虫 + LLM + Redis）

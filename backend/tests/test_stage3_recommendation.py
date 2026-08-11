@@ -12,6 +12,11 @@ os.environ.setdefault(
 )
 os.environ.setdefault("DISABLE_SCHEDULER_IN_TESTS", "true")
 
+try:
+    os.remove(os.path.join(tempfile.gettempdir(), "insurance_stage3_pytest.db"))
+except OSError:
+    pass
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -53,8 +58,6 @@ def _clear_products():
         db.commit()
     finally:
         db.close()
-
-
 def _seed_products():
     db = SessionLocal()
     try:
@@ -76,8 +79,6 @@ def _seed_products():
         db.commit()
     finally:
         db.close()
-
-
 def _base_payload():
     return {
         "age": 12,
@@ -463,35 +464,3 @@ def test_seed_products_if_empty_is_idempotent():
         assert db.query(Product).count() == first_count
     finally:
         db.close()
-
-
-def test_sse_stream_uses_safe_degraded_fallback(monkeypatch):
-    import backend.app.api.recommend as recommend_api
-    import backend.app.engine.ai_engine as ai_engine
-
-    assert not hasattr(ai_engine, "ai_rerank")
-    assert not hasattr(ai_engine, "ai_rerank_or_fallback")
-
-    user = UserProfile(age=30, gender="male", annual_income=100000, job_class=1, life_stage="single", family_burden="none", health_status="standard")
-    result = {
-        "budget": BudgetAnalysis(annual_income=100000, total_budget=8000, allocation={}),
-        "sum_insured": calculate_sum_insured(user),
-        "packages": [],
-        "hard_rule_summary": [],
-        "coverage_gap_summary": [],
-        "not_recommended_summary": [],
-        "not_recommended_details": [],
-    }
-
-    async def collect_chunks():
-        chunks = []
-        async for chunk in recommend_api._sse_recommend_stream(user, result):
-            chunks.append(chunk)
-        return chunks
-
-    chunks = asyncio.run(collect_chunks())
-
-    assert chunks[-1] == "data: [DONE]\n\n"
-    first_payload = json.loads(chunks[0].removeprefix("data: ").strip())
-    assert first_payload["engine_mode"] == "degraded"
-    assert first_payload["llm_narrative"]

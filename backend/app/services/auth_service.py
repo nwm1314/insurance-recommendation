@@ -1,8 +1,9 @@
-from datetime import datetime, timedelta, timezone
+﻿from datetime import datetime, timedelta, timezone
 import hashlib
 import secrets
 import bcrypt
 import jwt
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from backend.app.config import settings
 from backend.app.time import utc_now
@@ -20,11 +21,13 @@ from backend.app.models.auth import (
 
 DEFAULT_PERMISSIONS = [
     "product:read",
+    "product:write",
     "crawl:read",
     "crawl:trigger",
     "review:read",
     "review:approve",
     "audit:read",
+    "admin:grant",
     "recommendation:read_self",
     "profile:save_self",
 ]
@@ -93,7 +96,38 @@ def serialize_user(user: User) -> dict:
     }
 
 
+ALLOWED_ROLE_NAMES = ("user", "admin")
+
+
+def set_user_roles(db: Session, user: User, role_names: list[str], actor: User) -> User:
+    normalized = sorted(set(role_names))
+    if any(name not in ALLOWED_ROLE_NAMES for name in normalized):
+        raise ValueError("invalid_role")
+    if user.id == actor.id and "admin" in get_user_roles(user) and "admin" not in normalized:
+        raise ValueError("cannot_revoke_self_admin")
+    roles: dict[str, Role] = {}
+    for name in normalized:
+        role = db.query(Role).filter(Role.name == name).first()
+        if role is None:
+            raise ValueError("invalid_role")
+        roles[name] = role
+    db.query(UserRole).filter(UserRole.user_id == user.id).delete()
+    for name in normalized:
+        db.add(UserRole(user_id=user.id, role_id=roles[name].id))
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 def ensure_auth_defaults(db: Session):
+    try:
+        _ensure_auth_defaults(db)
+    except IntegrityError:
+        db.rollback()
+        _ensure_auth_defaults(db)
+
+
+def _ensure_auth_defaults(db: Session):
     permission_by_name: dict[str, Permission] = {}
     for permission_name in DEFAULT_PERMISSIONS:
         permission = db.query(Permission).filter(Permission.name == permission_name).first()
@@ -131,6 +165,15 @@ def ensure_auth_defaults(db: Session):
             db.add(admin)
             db.flush()
             db.add(UserRole(user_id=admin.id, role_id=role_by_name["admin"].id))
+            db.flush()
+            write_audit_log(
+                db,
+                admin,
+                "auth.first_admin.bootstrap",
+                "user",
+                str(admin.id),
+                detail={"source": "env"},
+            )
 
     db.commit()
 
@@ -140,18 +183,20 @@ def create_user(db: Session, email: str, password: str, full_name: str | None = 
     if existing_user:
         raise ValueError("email_exists")
 
-    has_users = db.query(User.id).first() is not None
-    role_name = "user" if has_users else "admin"
-    role = db.query(Role).filter(Role.name == role_name).first()
+    role = db.query(Role).filter(Role.name == "user").first()
     if role is None:
         ensure_auth_defaults(db)
-        role = db.query(Role).filter(Role.name == role_name).first()
+        role = db.query(Role).filter(Role.name == "user").first()
 
     user = User(email=email.lower(), password_hash=hash_password(password), full_name=full_name)
     db.add(user)
-    db.flush()
-    db.add(UserRole(user_id=user.id, role_id=role.id))
-    db.commit()
+    try:
+        db.flush()
+        db.add(UserRole(user_id=user.id, role_id=role.id))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise ValueError("email_exists")
     db.refresh(user)
     return user
 

@@ -144,6 +144,8 @@ def _build_single_combo(
 
     scored_list: list[ScoredProduct] = []
     total = 0.0
+    total_max = 0.0
+    unknown_max = False
     picked_ids: set[int] = set()
 
     for ins_type in type_order:
@@ -156,11 +158,25 @@ def _build_single_combo(
             continue
 
         best = available[0]
+        premium_max = best.get("premium_max")
+        # The API represents a missing premium_min as 0. If an upper quote
+        # bound is available, use it as the conservative lower-bound display
+        # value instead of presenting a misleading zero-premium plan.
         premium = best.get("premium", 0) or 0
+        if premium <= 0 and premium_max is not None and premium_max > 0:
+            premium = premium_max
+        # Entry check: the plan's lowest total must fit the spend limit.
         if total + premium > max_spend:
+            continue
+        # Max check: the plan's highest total must never exceed the spend limit
+        # (products without a disclosed upper bound are allowed with a
+        # "以核保为准" mark, since their max cannot be verified).
+        if premium_max is not None and total_max + premium_max > max_spend:
             continue
 
         total += premium
+        total_max += premium_max if premium_max is not None else 0
+        unknown_max = unknown_max or premium_max is None
         picked_ids.add(best.get("product_id", 0))
         scored_list.append(ScoredProduct(
             product_id=best.get("product_id", 0),
@@ -168,6 +184,8 @@ def _build_single_combo(
             company=best.get("company", ""),
             type=ins_type,
             premium=premium,
+            premium_max=premium_max,
+            deductible=best.get("deductible"),
             sum_insured=best.get("sum_insured", 0),
             source_url=best.get("source_url", ""),
             layer=LAYER_MAP.get(ins_type, "core"),
@@ -193,33 +211,48 @@ def _build_single_combo(
             if not remaining:
                 continue
             extra = remaining[0]
+            extra_max = extra.get("premium_max")
             extra_premium = extra.get("premium", 0) or 0
-            if total + extra_premium <= max_spend:
-                total += extra_premium
-                picked_ids.add(extra.get("product_id", 0))
-                scored_list.append(ScoredProduct(
-                    product_id=extra.get("product_id", 0),
-                    name=extra.get("name", ""),
-                    company=extra.get("company", ""),
-                    type=ins_type,
-                    premium=extra_premium,
-                    sum_insured=extra.get("sum_insured", 0),
-                    source_url=extra.get("source_url", ""),
-                    layer="supplement",
-                    score=extra.get("score", 0),
-                    score_detail=extra.get("score_detail", {}),
-                    risk_warnings=extra.get("risk_warnings", []),
-                ))
+            if extra_premium <= 0 and extra_max is not None and extra_max > 0:
+                extra_premium = extra_max
+            if total + extra_premium > max_spend:
+                continue
+            if extra_max is not None and total_max + extra_max > max_spend:
+                continue
+            total += extra_premium
+            total_max += extra_max if extra_max is not None else 0
+            unknown_max = unknown_max or extra_max is None
+            picked_ids.add(extra.get("product_id", 0))
+            scored_list.append(ScoredProduct(
+                product_id=extra.get("product_id", 0),
+                name=extra.get("name", ""),
+                company=extra.get("company", ""),
+                type=ins_type,
+                premium=extra_premium,
+                premium_max=extra_max,
+                deductible=extra.get("deductible"),
+                sum_insured=extra.get("sum_insured", 0),
+                source_url=extra.get("source_url", ""),
+                layer="supplement",
+                score=extra.get("score", 0),
+                score_detail=extra.get("score_detail", {}),
+                risk_warnings=extra.get("risk_warnings", []),
+            ))
 
     ratio = total / budget.annual_income if budget.annual_income > 0 else 0
     covered_types = {p.type for p in scored_list}
     missing_types = [t for t in required_types if t not in covered_types]
     completeness = 1.0 if not required_types else (len(required_types) - len(missing_types)) / len(required_types)
     budget_utilization = total / max(max_spend, 1)
+    # When any included product has no disclosed upper bound, the plan's max
+    # total is not verifiable — expose the lower bound only and mark
+    # total_premium_max as None so the UI shows "起 / 以核保为准".
+    total_premium_max = round(total_max, 2) if total_max > 0 and not unknown_max else None
     return ComboPackage(
         tag=tag,
         tag_label=label,
         total_premium=round(total, 2),
+        total_premium_max=total_premium_max,
         budget_ratio=round(ratio, 4),
         budget_utilization=round(min(budget_utilization, 1.0), 4),
         completeness_score=round(max(completeness, 0.0), 4),
