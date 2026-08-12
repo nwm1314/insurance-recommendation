@@ -87,6 +87,12 @@ docker compose up -d --build
 docker compose ps
 ```
 
+The backend image runs `alembic upgrade head` from its entrypoint before
+starting Uvicorn. The explicit migration command above remains useful for
+preflight visibility, but backend startup also repairs legacy databases that
+are missing the Alembic version row or additive schema changes. A migration
+failure still prevents the backend from becoming healthy.
+
 > 迁移命令必须在 `/srv/backend` 下执行（镜像 `WORKDIR` 是 `/srv`）。后端启动时校验数据库模式：未迁移或迁移版本不是 head 会直接拒绝启动（fail-fast），不会静默建表或进入不一致状态。
 
 验证：
