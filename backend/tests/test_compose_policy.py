@@ -21,4 +21,6 @@ def test_backend_runs_migrations_before_starting_server():
 
     assert 'ENTRYPOINT ["sh", "/srv/backend/entrypoint.sh"]' in dockerfile
     assert "alembic upgrade head" in entrypoint
+    assert "\ncd /srv\nexec \"$@\"" in entrypoint
+    assert entrypoint.index("alembic upgrade head") < entrypoint.index("\ncd /srv\nexec \"$@\"")
     assert 'exec "$@"' in entrypoint
