@@ -1,11 +1,22 @@
 .superpowers/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 node_modules/
 venv/
+.venv/
 backend/venv/
 dist/
 .env
+.env.*
+!.env.example
 *.log
 *.db
 *.sqlite
@@ -16,6 +27,10 @@ data/
 *.tsbuildinfo
 *.png
 .playwright-mcp/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
 
 # Local test/build caches and reports
 frontend/.npmcache/
