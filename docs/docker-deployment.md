@@ -221,9 +221,9 @@ example.com {
 
 ## 安全配置（Cookie、可信代理、限流、响应头）
 
-### 新增环境变量透传
+### 环境变量透传
 
-以下安全变量需要出现在 `docker-compose.yml` 的 backend 服务 `environment:` 段（当前 compose 文件尚未包含，请在部署前手工追加，与 `.env` 中的值对应）：
+以下安全变量已写入 `docker-compose.yml` 的 backend 服务 `environment:` 段，与 `.env` / `.env.example` 对应。未设置时走 fail-safe 开发默认：不信任代理头、不发 HSTS、Cookie Secure 为 false（`APP_ENV=production` 时须在 `.env` 显式设 `COOKIE_SECURE=true`，否则启动失败）。
 
 ```yaml
 APP_ENV: ${APP_ENV:-development}

@@ -31,7 +31,7 @@
 | TASK-029 | 将画像评估字段接入推荐 API 与结果页 | RELIABILITY | P1 | Medium | TASK-020 | TODO |
 | TASK-030 | 套餐产品拷贝 recommendation_reasons | BUG | P1 | Medium | TASK-016,TASK-020 | DONE |
 | TASK-031 | 统一 AI 命名并修正注册页过期文案 | DOCS | P2 | Low | TASK-022,TASK-024 | TODO |
-| TASK-032 | compose 透传 Cookie/代理/安全头变量 | INFRA | P1 | Medium | TASK-023 | TODO |
+| TASK-032 | compose 透传 Cookie/代理/安全头变量 | INFRA | P1 | Medium | TASK-023 | DONE |
 | TASK-033 | 账户页删除画像/记录增加确认 | UX | P3 | Low | TASK-003 | TODO |
 
 ## Task Dependency Graph
@@ -846,7 +846,7 @@ TASK-020/022/024 已把能力边界改为“AI 只解释、公开注册不再提
 ### TASK-032：compose 透传 Cookie/代理/安全头变量
 * **Type**：INFRA
 * **Priority**：P1
-* **Status**：TODO
+* **Status**：DONE
 * **Risk**：Medium
 * **Dependencies**：TASK-023
 * **Related Files / Modules**：`docker-compose.yml`、`docs/docker-deployment.md`、`.env.example`
@@ -861,13 +861,20 @@ compose backend `environment` 透传与文档/`.env.example` 一致的安全变�
 ### Constraints
 不得在仓库写入真实密钥；默认值须 fail-safe（未配代理则不信任 XFF）。
 ### Acceptance Criteria
-* [ ] `docker compose config` 能解析并透传上述变量
-* [ ] 文档不再称“尚未包含”
-* [ ] 未设置时行为与 TASK-023 开发默认一致
+* [x] `docker compose config` 能解析并透传上述变量
+* [x] 文档不再称“尚未包含”
+* [x] 未设置时行为与 TASK-023 开发默认一致
 ### Out of Scope
 TLS 终止、宿主机 Nginx CSP。
 ### Handoff
-应用本文件 Standard Handoff。
+- **问题确认**：属实。backend `environment` 原先只透传数据库/JWT/LLM/限流，不含 `APP_ENV`/`COOKIE_*`/`TRUST_*`/`SECURITY_HEADERS`/`HSTS_ENABLED`；文档仍写“尚未包含”。`.env.example` 已有这些键，无需改。
+- **实际改动文件**：
+  1. `docker-compose.yml`：backend 追加 7 个安全变量，默认 fail-safe（`TRUST_PROXY_HEADERS=false`、`TRUSTED_PROXIES=`、`COOKIE_SECURE=false`、`HSTS_ENABLED=false`）。
+  2. `docs/docker-deployment.md`：改为“已写入 compose”，并说明未设置时走开发默认。
+  3. `backend/tests/test_compose_policy.py`：断言 compose 文本含上述 7 键及其 fail-safe 默认。
+- **验证结果**：`pytest backend/tests/test_compose_policy.py -q` 通过。
+- **遗留**：未改 `.env.example`（已齐）；TLS/宿主机 Nginx CSP 仍在范围外。
+- **Commit/PR**：本工作区提交 `TASK-032`。
 
 ### TASK-033：账户页删除画像/记录增加确认
 * **Type**：UX
