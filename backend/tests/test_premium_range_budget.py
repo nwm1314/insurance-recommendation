@@ -356,6 +356,71 @@ def test_premium_tag_extra_products_keep_premium_max_and_deductible():
         db.close()
 
 
+def test_combo_copies_recommendation_reasons_for_primary_and_premium_extras():
+    _seed_products()
+    db = SessionLocal()
+    try:
+        user = _user()
+        budget = calculate_budget(user)
+        products = {p.name: p for p in db.query(Product).all()}
+        scored = [_scored_dict(products[n]) for n in ["医疗A", "医疗B", "意外A", "意外B", "重疾A", "重疾B", "寿险A"]]
+        reasons_by_name = {
+            "医疗A": (["医疗A主选理由"], ["医疗A不推荐理由"]),
+            "医疗B": (["医疗B加购理由"], ["医疗B不推荐理由"]),
+            "意外A": (["意外A主选理由"], []),
+            "意外B": (["意外B加购理由"], []),
+            "重疾A": (["重疾A主选理由"], []),
+            "重疾B": (["重疾B加购理由"], []),
+            "寿险A": (["寿险A主选理由"], []),
+        }
+        for item in scored:
+            rec, not_rec = reasons_by_name[item["name"]]
+            item["recommendation_reasons"] = rec
+            item["not_recommended_reasons"] = not_rec
+        packages = build_combos(scored, user, budget)
+        premium_pkg = next(p for p in packages if p.tag == "premium")
+        by_name = {p.name: p for p in premium_pkg.products}
+        assert {"医疗A", "医疗B", "意外A", "意外B", "重疾A", "重疾B", "寿险A"} <= set(by_name)
+        extras = [p for p in premium_pkg.products if p.layer == "supplement"]
+        assert {p.name for p in extras} == {"医疗B", "意外B", "重疾B"}
+        for name, (rec, not_rec) in reasons_by_name.items():
+            assert by_name[name].recommendation_reasons == rec
+            assert by_name[name].not_recommended_reasons == not_rec
+        for pkg in packages:
+            for product in pkg.products:
+                rec, not_rec = reasons_by_name[product.name]
+                assert product.recommendation_reasons == rec
+                assert product.not_recommended_reasons == not_rec
+    finally:
+        db.close()
+
+
+def test_combo_missing_recommendation_reasons_defaults_to_empty_list():
+    _seed_products()
+    db = SessionLocal()
+    try:
+        user = _user()
+        budget = calculate_budget(user)
+        products = {p.name: p for p in db.query(Product).all()}
+        scored = [_scored_dict(products[n]) for n in ["医疗A", "医疗B", "意外A", "意外B", "重疾A", "重疾B", "寿险A"]]
+        for item in scored:
+            item.pop("recommendation_reasons", None)
+            item.pop("not_recommended_reasons", None)
+        scored[0]["recommendation_reasons"] = None
+        scored[0]["not_recommended_reasons"] = None
+        packages = build_combos(scored, user, budget)
+        assert packages
+        premium_pkg = next(p for p in packages if p.tag == "premium")
+        extras = [p for p in premium_pkg.products if p.layer == "supplement"]
+        assert extras
+        for pkg in packages:
+            for product in pkg.products:
+                assert product.recommendation_reasons == []
+                assert product.not_recommended_reasons == []
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------- API end-to-end
 
 def test_api_recommend_quote_semantics_end_to_end():

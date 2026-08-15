@@ -4,7 +4,7 @@
 
 ## Review Summary
 
-当前不可发布：产品表模式与代码不兼容；产品 CRUD 的险种枚举损坏；目录为 2026-05-24 种子数据且抓取/审核/发布未闭环。另有 SSRF、首用户管理员、Cookie/代理限流/CORS 边界、推荐画像未消费、历史/画像旅程失效、移动端与 E2E 不足、文档和 Git 基线失真等问题。
+2026-08-11 基线卡 TASK-001～028 均已 DONE（迁移门禁、目录 CRUD、抓取审核发布、画像消费、安全边界、E2E、文档与 Git 基线）。2026-08-16 复核：官方卡无 TODO，但 Handoff 遗留了 5 项未成卡缺口——`/api/recommend` 未接线 `profile_assessment`、套餐丢失 `recommendation_reasons`、AI/注册文案与实现不一致、compose 未透传安全变量、账户页删除无确认。已补 TASK-029～033。
 
 ## Task Index
 
@@ -28,6 +28,11 @@
 | TASK-026 | 调查并优化前端生产包体积 | OPTIMIZATION | P3 | Low | TASK-014 | DONE |
 | TASK-027 | 修复结果页历史视图无限重复拉取 | BUG | P2 | Medium | TASK-001 | DONE |
 | TASK-028 | 修复登录 401 拦截器吞掉错误提示 | BUG | P2 | Low | TASK-023 | DONE |
+| TASK-029 | 将画像评估字段接入推荐 API 与结果页 | RELIABILITY | P1 | Medium | TASK-020 | TODO |
+| TASK-030 | 套餐产品拷贝 recommendation_reasons | BUG | P1 | Medium | TASK-016,TASK-020 | DONE |
+| TASK-031 | 统一 AI 命名并修正注册页过期文案 | DOCS | P2 | Low | TASK-022,TASK-024 | TODO |
+| TASK-032 | compose 透传 Cookie/代理/安全头变量 | INFRA | P1 | Medium | TASK-023 | TODO |
+| TASK-033 | 账户页删除画像/记录增加确认 | UX | P3 | Low | TASK-003 | TODO |
 
 ## Task Dependency Graph
 
@@ -49,6 +54,13 @@ flowchart TD
   T005 --> T014
   T015["TASK-015 mobile"] --> T014 --> T025["TASK-025 Git"]
   T014 --> T026["TASK-026 bundle"]
+  T020 --> T029["TASK-029 API profile"]
+  T016 --> T030["TASK-030 combo reasons"]
+  T020 --> T030
+  T022 --> T031["TASK-031 copy"]
+  T024 --> T031
+  T023 --> T032["TASK-032 compose"]
+  T003 --> T033["TASK-033 delete confirm"]
 ```
 
 ## Standard Handoff and Acceptance Criteria
@@ -678,7 +690,9 @@ Cookie 默认非 Secure、模板无 Cookie 配置；无条件信任 XFF；限流
 
 ## Recommended Execution Order
 
-1. TASK-017；2. TASK-022、TASK-023、TASK-009、TASK-008；3. TASK-005；4. TASK-018；5. TASK-020、TASK-016；6. TASK-001、TASK-003、TASK-015；7. TASK-014；8. TASK-024、TASK-025、TASK-026。
+基线卡（已完成）：1. TASK-017；2. TASK-022、TASK-023、TASK-009、TASK-008；3. TASK-005；4. TASK-018；5. TASK-020、TASK-016；6. TASK-001、TASK-003、TASK-015；7. TASK-014；8. TASK-024、TASK-025、TASK-026。
+
+2026-08-16 增量：TASK-030 已完成。剩余可并行 TASK-032 / TASK-031 / TASK-033；TASK-029 依赖引擎层已有 `filter_candidate_pool_with_profile`。建议顺序：TASK-032 先做（部署安全），再 TASK-029，最后 TASK-031/033。
 
 ### TASK-027：修复结果页历史视图无限重复拉取
 * **Type**：BUG
@@ -742,3 +756,140 @@ TASK-014 E2E 实测（页面快照）：错误密码登录后停留在 /login �
 **验证结果**：`npm run build` 通过（`tsc -b` + vite build，仅 TASK-026 范畴的 chunk 体积警告）；`npx playwright test tests/e2e/auth-flow.spec.ts` 真实后端（Playwright webServer 自动 alembic upgrade + uvicorn）**4 passed**（注册/错误密码拒绝/会话过期跳转/正确登录）。
 **遗留/新增任务**：无。`LoginPage` 的 `catch` 仍对所有失败统一提示"邮箱或密码错误"（含网络错误），完整错误处理框架在范围内外。
 **Commit/PR**：纳入 TASK-025 基线提交（见 TASK-025 Handoff）。
+
+### TASK-029：将画像评估字段接入推荐 API 与结果页
+* **Type**：RELIABILITY
+* **Priority**：P1
+* **Status**：TODO
+* **Risk**：Medium
+* **Dependencies**：TASK-020
+* **Related Files / Modules**：`backend/app/api/recommend.py`、`backend/app/engine/rule_engine.py`、`backend/tests/test_profile_consumption.py`、`frontend/src/types/index.ts`、`frontend/src/pages/ResultPage.tsx`
+### Context
+TASK-020 已在引擎层通过 `filter_candidate_pool_with_profile` 暴露 `unknown_conditions`、保障标记、险种偏好与逐产品 `traceable_reasons`，但 `/api/recommend` 仍只调用 `filter_candidate_pool_with_reasons`，响应体不含画像级字段。
+### Problem
+规则模式用户看不到未识别健康项、重复保障标记；结果页无法展示引擎已计算的可追溯原因。现有 API 冒烟测试只在引擎层断言 `unknown_conditions`，不证明 HTTP 响应已接线。
+### Evidence
+`recommend.py:10,31` 只导入/调用 `filter_candidate_pool_with_reasons`；`_build_response` 无 `profile_assessment`；`test_profile_consumption.py:416-423` 在 API 200 后另行查引擎。
+### Goal
+推荐 API 在所有引擎模式（rule/ai/degraded）返回可序列化的画像评估；结果页对未知健康项与保障标记给出不构成承保判断的提示。
+### Constraints
+不得给出承保保证或医疗诊断；未知项只提示“不参与规则筛选”；不得破坏既有 packages/评分契约；历史记录若缺该字段须兼容。
+### Acceptance Criteria
+* [ ] `/api/recommend` 响应含 `profile_assessment.health.unknown_conditions` / `recognized` / `coverage` / `preference`
+* [ ] 规则/AI/降级三种模式均带出该字段
+* [ ] 结果页展示未知健康项与重复保障提示；刷新历史记录缺字段不崩溃
+* [ ] 既有推荐回归测试通过
+### Out of Scope
+改变硬规则；分数级降权（属 scoring）；家庭共享画像。
+### Handoff
+应用本文件 Standard Handoff。
+
+### TASK-030：套餐产品拷贝 recommendation_reasons
+* **Type**：BUG
+* **Priority**：P1
+* **Status**：DONE
+* **Risk**：Medium
+* **Dependencies**：TASK-016, TASK-020
+* **Related Files / Modules**：`backend/app/engine/combo_builder.py`、`backend/app/engine/models.py`、`backend/tests/test_premium_range_budget.py`、`backend/app/engine/ai_engine.py`
+### Context
+`ScoredProduct` 已有 `recommendation_reasons`；`recommend.py` 评分阶段会写入该字段。套餐才是用户与 AI 实际看到的产品列表。
+### Problem
+`combo_builder._build_one_combo` 构造 `ScoredProduct` 时只拷 `risk_warnings`，不拷 `recommendation_reasons`，套餐内产品理由恒为空，结果页标签不出现，AI 产品文本回退默认文案。
+### Evidence
+`combo_builder.py:181-195,226-239`；`models.py:37`；`ai_engine.py:229`。
+### Goal
+套餐主选与 premium 加购产品均保留评分阶段的 `recommendation_reasons`（及 `not_recommended_reasons`）。
+### Constraints
+不得改变预算上限/未知上限语义；不得虚构理由。
+### Acceptance Criteria
+* [x] 主选与加购产品的 reasons 与 scored 输入一致
+* [x] 缺失该字段时为空列表，不报错
+* [x] 预算/报价区间回归不破坏
+### Out of Scope
+改写理由生成算法；前端新视觉。
+### Handoff
+- **问题确认**：属实。`_build_single_combo` 两处 `ScoredProduct(...)`（主选约 181 行、premium 加购约 226 行）只拷了 `risk_warnings`，未拷 `recommendation_reasons` / `not_recommended_reasons`；`ScoredProduct` 虽有默认空列表，套餐输出因此丢失评分阶段理由，结果页标签与 AI 文本会回退默认文案。
+- **实际改动文件**：
+  1. `backend/app/engine/combo_builder.py`：主选与 premium 加购均透传 `recommendation_reasons=best/extra.get(...) or []`、`not_recommended_reasons=... or []`，缺字段或值为 `None` 时落为空列表，不虚构理由。
+  2. `backend/tests/test_premium_range_budget.py`：新增主选+加购理由透传用例，以及缺失/`None` 字段默认空列表不报错用例；既有报价区间/预算上限用例未改。
+- **验证结果**：`backend\venv\Scripts\python.exe -m pytest backend/tests/test_premium_range_budget.py -q` → **15 passed**（约 55.37s）。
+- **遗留**：未改 `recommend.py`、前端、`rule_engine.py`；理由生成算法仍在评分阶段，本任务只负责套餐拷贝。
+- **Commit/PR**：本工作区提交 `TASK-030`。
+
+### TASK-031：统一 AI 命名并修正注册页过期文案
+* **Type**：DOCS
+* **Priority**：P2
+* **Status**：TODO
+* **Risk**：Low
+* **Dependencies**：TASK-022, TASK-024
+* **Related Files / Modules**：`frontend/src/components/EngineSwitch.tsx`、`frontend/src/pages/ResultPage.tsx`、`frontend/src/pages/RegisterPage.tsx`、`README.md`、`develop_guidence.md`
+### Context
+TASK-020/022/024 已把能力边界改为“AI 只解释、公开注册不再提权”，但若干用户可见文案与文档标题未改。
+### Problem
+`EngineSwitch`/`ResultPage` 仍写“AI 专家模式”；`RegisterPage` 仍写“首个注册用户会自动成为管理员”；README/开发指南标题仍用“AI 专家模式”。
+### Evidence
+`EngineSwitch.tsx:17`；`ResultPage.tsx:157`；`RegisterPage.tsx:15`；`README.md:24`；`develop_guidence.md:59`。
+### Goal
+用户可见文案与 TASK-020/022 语义一致：AI 为解释模式；注册恒为普通用户。
+### Constraints
+不得把计划写成能力；不改 `engine_mode` 枚举值（`ai`/`rule`/`degraded`）。
+### Acceptance Criteria
+* [ ] 开关、结果页标签不再称“AI 专家”
+* [ ] 注册页不再承诺首用户管理员
+* [ ] README/开发指南对应标题与实现一致
+* [ ] 相关 E2E 文案定位不回归
+### Out of Scope
+重写全部营销文案；改 AI 决策权。
+### Handoff
+应用本文件 Standard Handoff。
+
+### TASK-032：compose 透传 Cookie/代理/安全头变量
+* **Type**：INFRA
+* **Priority**：P1
+* **Status**：TODO
+* **Risk**：Medium
+* **Dependencies**：TASK-023
+* **Related Files / Modules**：`docker-compose.yml`、`docs/docker-deployment.md`、`.env.example`
+### Context
+TASK-023 已实现 Cookie Secure、可信代理、安全响应头；部署文档给出了待追加片段，但 compose 未透传。
+### Problem
+容器内后端读不到 `APP_ENV`/`COOKIE_SECURE`/`TRUST_PROXY_HEADERS` 等，生产部署会落到开发默认（非 Secure Cookie、不解析 XFF、无 HSTS）。
+### Evidence
+`docker-compose.yml:33-53` 无这些键；`docs/docker-deployment.md:226` 写明“当前 compose 文件尚未包含”。
+### Goal
+compose backend `environment` 透传与文档/`.env.example` 一致的安全变量，部署文档改为已落地而非待追加。
+### Constraints
+不得在仓库写入真实密钥；默认值须 fail-safe（未配代理则不信任 XFF）。
+### Acceptance Criteria
+* [ ] `docker compose config` 能解析并透传上述变量
+* [ ] 文档不再称“尚未包含”
+* [ ] 未设置时行为与 TASK-023 开发默认一致
+### Out of Scope
+TLS 终止、宿主机 Nginx CSP。
+### Handoff
+应用本文件 Standard Handoff。
+
+### TASK-033：账户页删除画像/记录增加确认
+* **Type**：UX
+* **Priority**：P3
+* **Status**：TODO
+* **Risk**：Low
+* **Dependencies**：TASK-003
+* **Related Files / Modules**：`frontend/src/pages/AccountPage.tsx`
+### Context
+TASK-014 观察项：账户页删除画像/记录为直接删除，与 AdminPage `Popconfirm` 不一致。
+### Problem
+误点即永久删除推荐历史或健康画像，无确认。
+### Evidence
+`AccountPage.tsx:134,169`；`AdminPage.tsx:194,215` 已用 Popconfirm。
+### Goal
+删除前确认，取消不发请求；桌面与窄屏可操作。
+### Constraints
+不得改变删除 API 语义与所有者隔离。
+### Acceptance Criteria
+* [ ] 删除记录/画像均需确认；取消不删除
+* [ ] 确认后仍走既有成功/失败提示
+### Out of Scope
+批量删除、回收站。
+### Handoff
+应用本文件 Standard Handoff。

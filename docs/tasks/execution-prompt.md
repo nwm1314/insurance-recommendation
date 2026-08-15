@@ -2,7 +2,7 @@
 
 > 复制以下提示词到新 Codex 会话即可开始执行任务
 
-> 本提示词已于 2026-08-12 与当前基线同步；旧版 `audit-task-cards.md` 仅为归档，不作执行依据。
+> 本提示词已于 2026-08-16 与当前基线同步；旧版 `audit-task-cards.md` 仅为归档，不作执行依据。TASK-001～028 已完成；当前执行 TASK-029～033。
 
 ---
 
@@ -55,37 +55,23 @@
 
 ## 推荐执行顺序
 
-### 第一波（立即执行，无依赖）
-1. **TASK-008** — SSRF 防护（安全优先，P1）
-2. **TASK-009** — CORS 校验（低风险快速修复）
-3. **TASK-002** — 空壳端点清理
+基线 TASK-001～028 已全部 DONE。当前增量：
 
-### 第二波（核心体验修复）
-4. **TASK-001** — 推荐结果持久化
-5. **TASK-016** — 定价准确性优化（P1，产品信任度）
-6. **TASK-007** — Token 迁移（高风险，需充分测试）
-7. **TASK-012** — SSE 死代码清理
+### 可并行（无共享写入）
+1. **TASK-030** — 套餐拷贝 recommendation_reasons（`combo_builder.py`）
+2. **TASK-032** — compose 透传安全变量（`docker-compose.yml` + 部署文档）
+3. **TASK-031** — AI/注册文案（前端文案 + README 对应句）
+4. **TASK-033** — 账户页删除确认（`AccountPage.tsx`）
 
-### 第三波（功能完善）
-8. **TASK-003** — 历史详情 + 画像回填（依赖 TASK-001）
-9. **TASK-015** — 移动端适配
-10. **TASK-005** — 产品管理 CRUD
-11. **TASK-006** — 平台管理 + 手动录入
-12. **TASK-010** — Schema 白名单
-13. **TASK-011** — page_type 枚举
-
-### 第四波（质量与性能）
-14. **TASK-004** — 画像/历史管理（依赖 TASK-003）
-15. **TASK-013** — 产品列表分页
-16. **TASK-014** — 前端 E2E 测试
+### 可与 030 并行但改 recommend.py
+5. **TASK-029** — 推荐 API 接线 `profile_assessment`（`recommend.py` + 结果页）
 
 ## 重要提醒
 
-1. **不要跳过依赖任务**：TASK-003 依赖 TASK-001，TASK-004 依赖 TASK-003
-2. **安全优先**：SECURITY 类型任务优先处理
-3. **高风险任务谨慎**：TASK-007（Token 迁移）需充分测试所有认证流程
-4. **移动端适配**：TASK-015 需在多种屏幕尺寸下验证
-5. **定价准确性**：TASK-016 涉及产品模型和多个前端组件，需全面测试
+1. **不要跳过依赖任务**：TASK-029 依赖 TASK-020 已交付的 `filter_candidate_pool_with_profile`
+2. **安全优先**：TASK-032 影响生产 Cookie/代理默认值，默认须 fail-safe
+3. **文案合规**：不得把 AI 写成选品/精排，不得承诺首用户管理员
+4. **共享文件**：TASK-029 与 TASK-031 都可能改 `ResultPage.tsx`，不要并行写同一文件
 
 ## 项目结构速查
 
@@ -117,7 +103,7 @@ insurance_recommendation/
 │   └── package.json
 ├── docs/
 │   └── tasks/
-│       └── audit-task-cards.md  # 任务卡文件
+│       └── 2026-08-11-audit-task-cards.md  # 当前执行任务卡
 ├── docker-compose.yml
 └── README.md
 ```
@@ -142,8 +128,8 @@ npm test                            # 运行测试（如有）
 
 ## 开始执行
 
-1. 阅读 `docs/tasks/audit-task-cards.md`
-2. 从第一波任务开始执行
+1. 阅读 `docs/tasks/2026-08-11-audit-task-cards.md`（旧 `audit-task-cards.md` 仅为归档）
+2. 从 TASK-029～033 开始执行
 3. 每个任务完成后更新任务卡状态
 4. 遇到问题时，优先检查任务卡中的 Handoff 说明
 

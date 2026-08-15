@@ -192,6 +192,8 @@ def _build_single_combo(
             score=best.get("score", 0),
             score_detail=best.get("score_detail", {}),
             risk_warnings=best.get("risk_warnings", []),
+            recommendation_reasons=best.get("recommendation_reasons") or [],
+            not_recommended_reasons=best.get("not_recommended_reasons") or [],
         ))
 
     ratio = total / budget.annual_income if budget.annual_income > 0 else 0
@@ -237,6 +239,8 @@ def _build_single_combo(
                 score=extra.get("score", 0),
                 score_detail=extra.get("score_detail", {}),
                 risk_warnings=extra.get("risk_warnings", []),
+                recommendation_reasons=extra.get("recommendation_reasons") or [],
+                not_recommended_reasons=extra.get("not_recommended_reasons") or [],
             ))
 
     ratio = total / budget.annual_income if budget.annual_income > 0 else 0
