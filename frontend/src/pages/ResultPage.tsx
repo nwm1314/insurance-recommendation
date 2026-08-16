@@ -160,7 +160,7 @@ export default function ResultPage() {
     return `¥${pkg.total_premium.toLocaleString()}起`;
   };
 
-  const engineModeLabel = result.engine_mode === 'ai' ? 'AI 解释模式' : result.engine_mode === 'degraded' ? '降级模式（AI 繁忙，已自动切换）' : '极速规则模式';
+  const engineModeLabel = result.engine_mode === 'ai' ? 'AI 精排模式' : result.engine_mode === 'degraded' ? '降级模式（AI 繁忙，已自动切换）' : '极速规则模式';
   const reasonCodeLabel = (code: string) => ({
     inactive: '停售',
     type_forbidden: '硬规则禁推',

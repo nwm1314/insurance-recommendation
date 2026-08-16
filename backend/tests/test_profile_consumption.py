@@ -47,7 +47,7 @@ from backend.app.engine.rule_engine import (
 )
 from backend.app.engine.ai_engine import (
     STRUCTURED_SYSTEM_PROMPT,
-    _build_products_text,
+    _build_candidates_text,
     _build_user_text,
     validate_ai_output,
 )
@@ -477,12 +477,12 @@ def test_api_recommend_returns_profile_assessment_all_modes(monkeypatch):
         assert degraded.json()["engine_mode"] == "degraded"
         assert_assessment(degraded.json())
 
-        # AI 模式：mock LLM 返回，解释路径仍带出同一画像评估
+        # AI 模式：mock LLM 返回，精排路径仍带出同一画像评估 + AI 精选套餐
         monkeypatch.setattr(settings, "llm_api_key", "test-key")
 
-        def fake_ai_rerank_sync(user, package_products, packages):
+        def fake_ai_rerank_sync(user, candidate_pool, packages, budget_max_spend=0.0):
             explanation = AIRecommendationExplanation(
-                selected_product_ids=[package_products[0].product_id],
+                selected_product_ids=[candidate_pool[0]["product_id"]],
                 summary="结构化摘要",
                 reasoning=["保障组合完整"],
                 risk_notes=["以健康告知和核保为准"],
@@ -495,16 +495,20 @@ def test_api_recommend_returns_profile_assessment_all_modes(monkeypatch):
         assert ai.status_code == 200, ai.text
         assert ai.json()["engine_mode"] == "ai"
         assert ai.json()["ai_explanation"]["summary"] == "结构化摘要"
+        assert ai.json()["packages"][0]["tag"] == "ai_pick"
         assert_assessment(ai.json())
 
 
 def test_ai_prompt_claims_no_selection_power():
+    """TASK-036 后 AI 在白名单内精排；安全约束（白名单/预算/险种限 1/不承诺承保/不诊断）仍在。"""
     assert "规则引擎" in STRUCTURED_SYSTEM_PROMPT
-    assert "不得声称" in STRUCTURED_SYSTEM_PROMPT
-    assert "由你完成选品/精排/AI 推荐" in STRUCTURED_SYSTEM_PROMPT
+    assert "白名单" in STRUCTURED_SYSTEM_PROMPT
+    assert "每个险种最多选择 1 款" in STRUCTURED_SYSTEM_PROMPT
+    assert "不得超过" in STRUCTURED_SYSTEM_PROMPT and "预算上限" in STRUCTURED_SYSTEM_PROMPT
     assert "selected_product_ids 只能来自" in STRUCTURED_SYSTEM_PROMPT
     assert "保证承保" in STRUCTURED_SYSTEM_PROMPT
     assert "医疗诊断" in STRUCTURED_SYSTEM_PROMPT
+    assert "核保为准" in STRUCTURED_SYSTEM_PROMPT
 
 
 def test_ai_output_still_whitelist_constrained():
@@ -531,15 +535,15 @@ def test_ai_user_text_includes_profile_fields_and_unknown_conditions():
 
 
 def test_ai_products_text_carries_traceable_reasons():
-    product = ScoredProduct(
+    product = dict(
         product_id=1, name="重疾X", company="C", type="重疾险",
-        premium=3000, sum_insured=50, score=82,
+        premium=3000, premium_max=None, sum_insured=50, score=82,
         recommendation_reasons=["保障责任相对完整", "品牌稳定性较好"],
         risk_warnings=[{"type": "health_notice_risk", "message": "重疾险/寿险对健康告知更严格，建议重点核对既往症和检查异常"}],
     )
-    text = _build_products_text([product])
+    text = _build_candidates_text([product])
     assert "推荐依据：保障责任相对完整" in text
     assert "健康提示：重疾险/寿险对健康告知更严格" in text
 
-    bare = _build_products_text([ScoredProduct(product_id=2, name="意外X", company="C", type="意外险", premium=100, sum_insured=20, score=70)])
-    assert "规则引擎按年龄/职业/健康/预算规则纳入候选池" in bare
+    bare = _build_candidates_text([dict(product_id=2, name="意外X", company="C", type="意外险", premium=100, sum_insured=20, score=70)])
+    assert "按年龄/职业/健康/预算规则纳入候选池" in bare

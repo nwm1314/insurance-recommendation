@@ -485,7 +485,7 @@ export default function HomePage() {
                     <p style={{ margin: '4px 0' }}>（按年龄、职业与预算动态组合，以推荐结果为准）</p>
                     <p style={{ margin: '4px 0' }}>
                       推荐模式：
-                      <Tag color={aiMode ? 'blue' : 'green'}>{aiMode ? 'AI 解释' : '极速规则'}</Tag>
+                      <Tag color={aiMode ? 'blue' : 'green'}>{aiMode ? 'AI 精排' : '极速规则'}</Tag>
                     </p>
                   </Col>
                 </Row>
@@ -493,7 +493,7 @@ export default function HomePage() {
               {aiMode && (
                 <Card size="small" style={{ background: '#e6f7ff', border: '1px solid #91d5ff' }}>
                   <Text style={{ fontSize: 13 }}>
-                    AI 模式将调用大模型，解释规则引擎已选出的方案（AI 不参与选品与排序），响应时间约 10-30 秒
+                    AI 模式将调用大模型，在规则引擎筛出的候选池内做个性化精排并生成「AI 精选」方案（硬规则与预算上限不受 AI 影响），响应时间约 10-30 秒
                   </Text>
                 </Card>
               )}

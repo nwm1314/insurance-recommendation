@@ -284,3 +284,90 @@ def _required_types_for_package(allowed_types: set[str], tag: str) -> list[str]:
     if tag != "budget" and "定期寿险" in allowed_types:
         required.append("定期寿险")
     return required
+
+
+def _scored_product_from_dict(p: dict, layer: str) -> ScoredProduct:
+    """Full-field copy from a scored dict (TASK-030/034/035 fields included)."""
+    return ScoredProduct(
+        product_id=p.get("product_id", 0),
+        name=p.get("name", ""),
+        company=p.get("company", ""),
+        type=p["type"],
+        premium=p.get("premium", 0) or 0,
+        premium_max=p.get("premium_max"),
+        deductible=p.get("deductible"),
+        sum_insured=p.get("sum_insured", 0),
+        source_url=p.get("source_url", ""),
+        source_type=p.get("source_type", ""),
+        official_verified=bool(p.get("official_verified")),
+        dual_source_verified=bool(p.get("dual_source_verified")),
+        third_party_review_url=p.get("third_party_review_url"),
+        third_party_review_title=p.get("third_party_review_title"),
+        layer=layer,
+        score=p.get("score", 0),
+        score_detail=p.get("score_detail", {}),
+        risk_warnings=p.get("risk_warnings", []),
+        recommendation_reasons=p.get("recommendation_reasons") or [],
+        not_recommended_reasons=p.get("not_recommended_reasons") or [],
+    )
+
+
+def build_ai_pick_package(
+    selected_ids: list[int],
+    scored_products: list[dict],
+    user: UserProfile,
+    budget: BudgetAnalysis,
+) -> ComboPackage | None:
+    """Turn the AI's ranked selection into an「AI 精选」package with hard guards.
+
+    Safety rails regardless of what the LLM returned:
+    - only IDs that exist in the rule-engine scored pool are used (whitelist);
+    - at most one product per insurance type (AI order wins);
+    - the combined premium must respect the total budget (known upper bounds
+      enforced; undisclosed maxima counted at the floor and marked "起"),
+      otherwise lower-ranked picks are dropped in AI order.
+    """
+    by_id = {p["product_id"]: p for p in scored_products}
+    max_spend = budget.total_budget
+    picked: list[ScoredProduct] = []
+    seen_types: set[str] = set()
+    total = 0.0
+    total_max = 0.0
+    unknown_max = False
+    for product_id in selected_ids:
+        p = by_id.get(product_id)
+        if p is None or p["type"] in seen_types:
+            continue
+        premium = p.get("premium", 0) or 0
+        premium_max = p.get("premium_max")
+        if total + premium > max_spend:
+            continue
+        if premium_max is not None and total_max + premium_max > max_spend:
+            continue
+        picked.append(_scored_product_from_dict(p, LAYER_MAP.get(p["type"], "core")))
+        seen_types.add(p["type"])
+        total += premium
+        total_max += premium_max if premium_max is not None else premium
+        unknown_max = unknown_max or premium_max is None
+    if not picked:
+        return None
+
+    ratio = total / budget.annual_income if budget.annual_income > 0 else 0
+    allowed_types = get_allowed_types(user)
+    required_types = _required_types_for_package(allowed_types, "ai_pick")
+    covered_types = {p.type for p in picked}
+    missing_types = [t for t in required_types if t not in covered_types]
+    completeness = 1.0 if not required_types else (len(required_types) - len(missing_types)) / len(required_types)
+    budget_utilization = total / max(max_spend, 1)
+    total_premium_max = round(total_max, 2) if total_max > 0 and not unknown_max else None
+    return ComboPackage(
+        tag="ai_pick",
+        tag_label="✨ AI 精选方案",
+        total_premium=round(total, 2),
+        total_premium_max=total_premium_max,
+        budget_ratio=round(ratio, 4),
+        budget_utilization=round(min(budget_utilization, 1.0), 4),
+        completeness_score=round(max(completeness, 0.0), 4),
+        coverage_gap_notes=[f"预算或候选池限制，暂未配置{t}" for t in missing_types],
+        products=picked,
+    )

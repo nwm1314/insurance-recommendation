@@ -259,9 +259,9 @@ def test_ai_explanation_is_returned_as_structured_field(client, monkeypatch):
     _seed_products()
     monkeypatch.setattr(settings, "llm_api_key", "test-key")
 
-    def fake_ai_rerank_sync(user, package_products, packages):
+    def fake_ai_rerank_sync(user, candidate_pool, packages, budget_max_spend=0.0):
         explanation = AIRecommendationExplanation(
-            selected_product_ids=[package_products[0].product_id],
+            selected_product_ids=[candidate_pool[0]["product_id"]],
             summary="结构化摘要",
             reasoning=["保障组合完整"],
             risk_notes=["以健康告知和核保为准"],
@@ -279,6 +279,9 @@ def test_ai_explanation_is_returned_as_structured_field(client, monkeypatch):
     assert data["llm_narrative"]
     assert data["ai_explanation"]["summary"] == "结构化摘要"
     assert data["ai_explanation"]["selected_product_ids"]
+    # AI 精选套餐位于最前，且产品来自 AI 的选择
+    assert data["packages"][0]["tag"] == "ai_pick"
+    assert data["packages"][0]["products"][0]["id"] in data["ai_explanation"]["selected_product_ids"]
 
 
 def test_ai_mode_degrades_to_rule_when_llm_unavailable(client, monkeypatch):
@@ -287,7 +290,7 @@ def test_ai_mode_degrades_to_rule_when_llm_unavailable(client, monkeypatch):
 
     _seed_products()
     monkeypatch.setattr(settings, "llm_api_key", "test-key")
-    monkeypatch.setattr(recommend_api, "ai_rerank_sync", lambda user, products, packages: None)
+    monkeypatch.setattr(recommend_api, "ai_rerank_sync", lambda user, candidates, packages, budget_max_spend=0.0: None)
 
     payload = {**_base_payload(), "age": 30, "enable_llm_engine": True}
     response = client.post("/api/recommend", json=payload)
@@ -354,14 +357,14 @@ def test_ai_rerank_disables_deepseek_thinking_and_retries_empty_content(monkeypa
     monkeypatch.setattr(settings, "llm_max_tokens", 2048)
     monkeypatch.setattr(settings, "llm_max_retries", 3)
 
-    product = ScoredProduct(
-        product_id=1,
-        name="测试产品",
-        company="测试公司",
-        type="医疗险",
-        premium=500,
-        sum_insured=300,
-    )
+    product = {
+        "product_id": 1,
+        "name": "测试产品",
+        "company": "测试公司",
+        "type": "医疗险",
+        "premium": 500,
+        "sum_insured": 300,
+    }
     result = ai_engine.ai_rerank_sync(
         UserProfile(age=30, gender="male", annual_income=200000, job_class=2, life_stage="single", family_burden="none", health_status="standard"),
         [product],
@@ -409,14 +412,14 @@ def test_ai_rerank_retries_without_unsupported_json_response_format(monkeypatch)
     monkeypatch.setattr(settings, "llm_base_url", "https://example.test/v1")
     monkeypatch.setattr(settings, "llm_model", "compatible-model")
 
-    product = ScoredProduct(
-        product_id=1,
-        name="测试产品",
-        company="测试公司",
-        type="医疗险",
-        premium=500,
-        sum_insured=300,
-    )
+    product = {
+        "product_id": 1,
+        "name": "测试产品",
+        "company": "测试公司",
+        "type": "医疗险",
+        "premium": 500,
+        "sum_insured": 300,
+    }
     result = ai_engine.ai_rerank_sync(
         UserProfile(age=30, gender="male", annual_income=200000, job_class=2, life_stage="single", family_burden="none", health_status="standard"),
         [product],
@@ -436,14 +439,14 @@ def test_ai_rerank_catches_client_initialization_failure(monkeypatch):
     monkeypatch.setattr(settings, "llm_model", "compatible-model")
     monkeypatch.setattr(ai_engine, "OpenAI", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("bad config")))
 
-    product = ScoredProduct(
-        product_id=1,
-        name="测试产品",
-        company="测试公司",
-        type="医疗险",
-        premium=500,
-        sum_insured=300,
-    )
+    product = {
+        "product_id": 1,
+        "name": "测试产品",
+        "company": "测试公司",
+        "type": "医疗险",
+        "premium": 500,
+        "sum_insured": 300,
+    }
     assert ai_engine.ai_rerank_sync(
         UserProfile(age=30, gender="male", annual_income=200000, job_class=2, life_stage="single", family_burden="none", health_status="standard"),
         [product],

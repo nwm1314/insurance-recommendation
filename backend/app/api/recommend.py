@@ -12,7 +12,7 @@ from backend.app.engine.models import UserProfile, ScoredProduct
 from backend.app.engine.rule_engine import filter_candidate_pool_with_profile, get_allowed_types, get_type_budget_limits
 from backend.app.engine.scoring import score_product, apply_price_scoring
 from backend.app.engine.budget import calculate_budget, calculate_sum_insured
-from backend.app.engine.combo_builder import build_combos
+from backend.app.engine.combo_builder import build_ai_pick_package, build_combos
 from backend.app.engine.ai_engine import ai_rerank_sync
 from backend.app.engine.fallback import get_fallback_narrative
 from backend.app.engine.health import evaluate_health_match
@@ -223,7 +223,9 @@ def recommend(
             save_recommendation_record(db, current_user, request.model_dump(), response)
         return response
 
-    # AI mode: call LLM synchronously, return JSON with narrative
+    # AI mode: rank candidates within the rule-engine whitelist and compose an
+    # AI-pick package. Hard rules already filtered the pool; budget is enforced
+    # again when materializing the AI selection.
     from backend.app.config import settings
     if not settings.llm_api_key:
         logger.warning(
@@ -237,24 +239,32 @@ def recommend(
             save_recommendation_record(db, current_user, request.model_dump(), response)
         return response
 
-    # Send package products (what user actually sees) to AI, not all candidates
     packages = result.get("packages", [])
-    package_products: list[ScoredProduct] = []
-    if packages:
-        # Use the star (middle) package as primary recommendation context
-        star_pkg = packages[1] if len(packages) > 1 else packages[0]
-        package_products = list(star_pkg.products)
-    else:
+    if not packages:
         logger.warning(
             "AI mode degraded: no candidate packages available (model=%s, base_url=%s)",
             settings.llm_model,
             safe_llm_base_url(settings.llm_base_url),
         )
 
-    ai_result = ai_rerank_sync(user, package_products, packages)
+    # Candidate pool for the AI: top-3 per insurance type by rule-engine score
+    # (the pool has already cleared hard rules and per-type budget admission).
+    pool_by_type: dict[str, list[dict]] = {}
+    for p in sorted(result["scored"], key=lambda x: x.get("score", 0), reverse=True):
+        pool_by_type.setdefault(p["type"], [])
+        if len(pool_by_type[p["type"]]) < 3:
+            pool_by_type[p["type"]].append(p)
+    candidate_pool = [p for plist in pool_by_type.values() for p in plist]
+
+    ai_result = ai_rerank_sync(user, candidate_pool, packages, result["budget"].total_budget)
 
     if ai_result:
         narrative, ai_explanation = ai_result
+        ai_package = build_ai_pick_package(
+            ai_explanation.selected_product_ids, result["scored"], user, result["budget"]
+        )
+        if ai_package is not None:
+            result["packages"] = [ai_package] + list(packages)
         response = _build_response(user, result, engine_mode="ai")
         response["llm_narrative"] = narrative
         response["ai_explanation"] = ai_explanation.model_dump() if ai_explanation else None

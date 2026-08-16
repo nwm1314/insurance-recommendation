@@ -50,7 +50,7 @@ services:
       DISCOVERY_ENABLED: ${DISCOVERY_ENABLED:-true}
       DISCOVERY_MAX_NEW_PER_SOURCE: ${DISCOVERY_MAX_NEW_PER_SOURCE:-20}
       OFFICIAL_VERIFICATION_ENABLED: ${OFFICIAL_VERIFICATION_ENABLED:-true}
-      LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY is required (fill it in .env, otherwise AI 解释模式 silently degrades to rule mode)}
+      LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY is required (fill it in .env, otherwise AI 精排模式 silently degrades to rule mode)}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com/v1}
       LLM_MODEL: ${LLM_MODEL:-deepseek-v4-flash}
       LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-2048}

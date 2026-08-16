@@ -10,22 +10,24 @@ from backend.app.engine.health import analyze_health_issues
 
 logger = logging.getLogger(__name__)
 
-# 说明：ai_rerank_sync 为历史命名，实际职责仅是对规则引擎已选出的套餐做解释说明，
-# 不参与产品筛选与排序。选品与排序由 rule_engine（硬规则 + 精算规则）负责。
-STRUCTURED_SYSTEM_PROMPT = """你是保险方案解释助手。系统已由规则引擎（硬规则 + 精算规则）完成产品筛选与套餐组合，你只能解释规则引擎已经选出的产品组合，不得新增、替换或选择套餐外的产品。
+# AI 精排（TASK-036）：硬规则（停售/年龄/职业/健康告知/预算准入）由规则引擎先执行并
+# 产出候选池；AI 在候选池白名单内做个性化选择与排序，构成「AI 精选」组合。
+# 安全边界：AI 只能选白名单 ID、每险种至多 1 款、组合保费受预算上限硬校验
+# （combo_builder.build_ai_pick_package 兜底截断），且不得承诺承保/医疗诊断。
+STRUCTURED_SYSTEM_PROMPT = """你是保险方案精排顾问。规则引擎（硬规则 + 精算规则）已完成粗筛并给出候选池与参考套餐；你的任务是在候选池白名单内，结合用户画像做个性化的产品选择与排序，构成一份「AI 精选」组合。
 
 严格遵循：
-1. selected_product_ids 只能来自输入中给出的套餐内产品 ID（白名单），不得虚构或越权选择。
-2. 不得声称"由你完成选品/精排/AI 推荐"——选品与排序由规则引擎负责，你只负责解释。
-3. 不得承诺收益、保证承保、给出医疗诊断或诱导隐瞒健康告知。
-4. 涉及健康告知、既往症的表述必须以"请以产品健康告知和保险公司核保为准"收尾。
+1. selected_product_ids 只能来自输入候选池中列出的产品 ID（白名单），不得虚构；按你认为的适配度从高到低排序。
+2. 每个险种最多选择 1 款产品；组合保费合计（未披露保费上限的产品按最低价计）不得超过给定的预算上限。
+3. 决策依据必须来自输入信息（画像、评分、推荐依据、健康提示），不得引入外部产品或臆造数据。
+4. 不得承诺收益、保证承保、给出医疗诊断或诱导隐瞒健康告知；健康告知/既往症表述必须以"请以产品健康告知和保险公司核保为准"收尾。
 5. 请严格输出 JSON 对象（无其他内容）：
 {
   "selected_product_ids": [1, 2],
   "summary": "100字以内方案摘要",
   "reasoning": ["理由1", "理由2"],
   "risk_notes": ["风险提示1"],
-  "comparison_notes": ["对比说明1"]
+  "comparison_notes": ["与规则套餐的对比说明1"]
 }"""
 
 
@@ -93,10 +95,16 @@ def render_ai_explanation(explanation: AIRecommendationExplanation) -> str:
 
 def ai_rerank_sync(
     user: UserProfile,
-    package_products: list[ScoredProduct],
+    candidate_pool: list[dict],
     packages: list | None = None,
-) -> tuple[str, AIRecommendationExplanation | None] | None:
-    """Synchronous AI call that returns validated structured explanation.
+    budget_max_spend: float = 0.0,
+) -> tuple[str, AIRecommendationExplanation] | None:
+    """AI 精排：在规则引擎候选池白名单内做个性化选择与排序。
+
+    candidate_pool 为规则引擎产出的候选产品（dict 列表，含评分/推荐依据/
+    健康提示）；budget_max_spend 为组合保费硬上限（元）。返回
+    (narrative, explanation)，AI 选择的组合由调用方经
+    build_ai_pick_package 做预算兜底后插入套餐列表。
     Returns None if AI is unavailable or fails."""
     if not settings.llm_api_key:
         logger.warning(
@@ -106,15 +114,15 @@ def ai_rerank_sync(
         )
         return None
 
-    if not package_products:
+    if not candidate_pool:
         logger.warning(
-            "AI rerank skipped: no package products to rerank (model=%s, base_url=%s)",
+            "AI rerank skipped: no candidate products to rank (model=%s, base_url=%s)",
             settings.llm_model,
             safe_llm_base_url(settings.llm_base_url),
         )
         return None
 
-    products_text = _build_products_text(package_products)
+    products_text = _build_candidates_text(candidate_pool)
     packages_text = _build_packages_text(packages) if packages else ""
     user_text = _build_user_text(user)
     llm_base_url = normalize_llm_base_url(settings.llm_base_url)
@@ -128,7 +136,13 @@ def ai_rerank_sync(
         )
         messages = [
             {"role": "system", "content": STRUCTURED_SYSTEM_PROMPT},
-            {"role": "user", "content": user_text + "\n推荐套餐方案：\n" + packages_text + "\n套餐包含产品：\n" + products_text},
+            {
+                "role": "user",
+                "content": (
+                    f"{user_text}\n预算上限：{budget_max_spend:.0f} 元/年（组合保费合计不得超过）\n"
+                    f"规则引擎参考套餐：\n{packages_text}\n候选池（白名单，只能从中选择）：\n{products_text}"
+                ),
+            },
         ]
         response = _create_completion(client, messages)
         content = _message_content(response)
@@ -140,7 +154,7 @@ def ai_rerank_sync(
             )
             response = _create_completion(client, messages)
             content = _message_content(response)
-        allowed_ids = {product.product_id for product in package_products}
+        allowed_ids = {int(p["product_id"]) for p in candidate_pool}
         parsed = validate_ai_output(content, allowed_ids)
         if parsed is None:
             logger.warning(
@@ -222,15 +236,18 @@ def _message_content(response) -> str:
     return str(content)
 
 
-def _build_products_text(scored_products: list[ScoredProduct]) -> str:
-    """Format package products with traceable rule/profile reasons for the prompt."""
+def _build_candidates_text(candidate_pool: list[dict]) -> str:
+    """Format rule-engine candidates (with scores/reasons/warnings) for the prompt."""
     parts = []
-    for p in scored_products:
-        reasons = "；".join(p.recommendation_reasons) if p.recommendation_reasons else "规则引擎按年龄/职业/健康/预算规则纳入候选池"
-        warnings = "；".join(w.get("message", "") for w in p.risk_warnings) if p.risk_warnings else "无"
+    for p in candidate_pool:
+        premium = p.get("premium", 0)
+        premium_max = p.get("premium_max")
+        price = f"{premium}/年" + (f"~{premium_max}" if premium_max else "起（未披露上限）")
+        reasons = "；".join(p.get("recommendation_reasons") or []) or "按年龄/职业/健康/预算规则纳入候选池"
+        warnings = "；".join(w.get("message", "") for w in p.get("risk_warnings") or []) or "无"
         parts.append(
-            f"- ID {p.product_id}: {p.name}（{p.type}）：保费 {p.premium}/年，保额 {p.sum_insured} 万，"
-            f"评分 {p.score}，公司 {p.company}\n  推荐依据：{reasons}\n  健康提示：{warnings}"
+            f"- ID {p['product_id']}: {p['name']}（{p['type']}）：保费 {price}，保额 {p.get('sum_insured', 0)} 万，"
+            f"评分 {p.get('score', 0)}，公司 {p.get('company', '')}\n  推荐依据：{reasons}\n  健康提示：{warnings}"
         )
     return "\n".join(parts)
 
@@ -254,11 +271,11 @@ def _build_user_text(user: UserProfile) -> str:
     if user.existing_coverage:
         lines.append(
             "- 已有保障：" + "、".join(user.existing_coverage)
-            + "（规则引擎已对可能存在重复保障的险种做软性提示，不作排除）"
+            + "（选品时注意避免与既有保单重复保障，重复与否以保单条款为准）"
         )
     preferred = user.preferred_type or ""
     if preferred:
-        lines.append(f"- 偏好险种：{preferred}（规则引擎据此调整类型优先级，不改变硬规则）")
+        lines.append(f"- 偏好险种：{preferred}（可在候选池内优先考虑该险种）")
     if user.health_issues:
         analysis = analyze_health_issues(user.health_issues)
         recognized = "、".join(
@@ -267,7 +284,7 @@ def _build_user_text(user: UserProfile) -> str:
         lines.append(f"- 健康状态：{user.health_status}，已识别异常项：{recognized}")
         if analysis.unknown_conditions:
             lines.append(
-                "- 未识别健康项（仅作记录，不影响本次规则推荐，也不构成承保判断）："
+                "- 未识别健康项（候选池已按识别项过滤，未识别项不参与筛选，也不构成承保判断）："
                 + "、".join(analysis.unknown_conditions)
             )
     else:

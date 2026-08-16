@@ -982,3 +982,33 @@ seed 产品为虚构数据且链接曾大面积 404/403；无产品发现机制�
 **实测**：达尔文12号（开心保人工审核发布）→ 深蓝保匹配命中真实测评文章（curl 200）→ 推荐 API 携带测评标题与链接；大护甲/大黄蜂官网验证如实标 `unverifiable`（两家无 adapter）；匹配经模糊更新至既有产品行并因"发布即上架"修复自动回在售。
 **遗留**：LLM key 余额恢复后聚合站批量发布将自动填充双源/测评标注；更多官网 adapter（探测到服务端产品目录的站）按 `OFFICIAL_SITE_ADAPTERS` 框架逐站追加。
 **Commit/PR**：本工作区提交 `TASK-035`。
+
+### TASK-036：AI 模式真实精排（候选池白名单内选择与排序）
+* **Type**：FEATURE
+* **Priority**：P1
+* **Status**：DONE
+* **Risk**：High
+* **Dependencies**：TASK-020, TASK-034
+* **Related Files / Modules**：`backend/app/engine/ai_engine.py`、`backend/app/engine/combo_builder.py`、`backend/app/api/recommend.py`、`frontend/src/pages/HomePage.tsx`
+### Context
+用户核查发现"AI 模式"并未真正使用大模型筛选推荐产品——属实：TASK-020 时把 AI 收紧为"只解释"（prompt 明文禁止选品、只发送规则套餐内产品、selected_product_ids 对结果无影响）。
+### Problem
+AI 模式名不副实；用户开启 AI 得到的与规则模式完全相同的套餐，仅多一段解释文案。
+### Goal
+AI 在安全边界内真实参与筛选与排序：硬规则粗筛不变，AI 在候选池白名单内做个性化选择排序，生成「AI 精选」套餐。
+### Constraints
+AI 只能选白名单 ID（越界整体拒绝降级）；每险种至多 1 款；组合保费受预算上限硬校验（known max 强制、unknown 按下限计标「起」）；不承诺承保/不诊断约束保留。
+### Acceptance Criteria
+* [x] AI 输入为候选池（每险种 top 3）+ 画像 + 预算上限，而非已选套餐产品
+* [x] AI 选择落地为 `✨ AI 精选方案` 套餐并插入 packages[0]，规则套餐保留
+* [x] `build_ai_pick_package` 白名单/同险种去重/预算截断/完整字段拷贝（含 TASK-034/035 标注）
+* [x] prompt 重写为精排语义，安全约束全部保留并有测试锚定
+* [x] 降级路径（无 key/LLM 失败/输出越界）不变
+* [x] 全部用户可见文案与实际能力一致（AI 精排模式）
+### Out of Scope
+绕过硬规则；AI 修改保费/评分数据；流式输出。
+### Handoff（2026-08-16 完成）
+**改动**：`ai_engine.py`（精排 prompt + `ai_rerank_sync(user, candidate_pool, packages, budget_max_spend)` 新签名 + 候选文本/画像文案适配）、`combo_builder.build_ai_pick_package`（安全兜底落地）、`recommend.py` AI 分支（候选池构建 + AI 套餐插入）、文案 6 处（EngineSwitch/ResultPage/HomePage/README/开发指南/compose）。
+**验证**：pytest **208 passed**（新增 `test_ai_pick.py` 6 用例：白名单去重顺序/预算截断/unknown max/空选择/端到端套餐插入；旧 prompt 断言与 mock 签名适配）；build/E2E 35 passed。
+**遗留**：真实 LLM 调用仍受 API key 余额（402）阻塞——mock 已覆盖全部逻辑，key 恢复后 AI 精排即时生效，无需改码。
+**Commit/PR**：本工作区提交 `TASK-036`。
