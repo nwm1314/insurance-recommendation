@@ -41,6 +41,12 @@ export default function ProductCard({ product }: Props) {
           <Tag color={LAYER_COLORS[product.layer]} style={{ marginLeft: 8, fontSize: 11 }}>
             {LAYER_LABELS[product.layer]}
           </Tag>
+          {product.official_verified && (
+            <Tag color="green" style={{ fontSize: 11 }}>官网已验证</Tag>
+          )}
+          {product.dual_source_verified && (
+            <Tag color="geekblue" style={{ fontSize: 11 }}>双源验证</Tag>
+          )}
         </span>
       }
       extra={<RiskBadge warnings={product.risk_warnings} />}
@@ -54,6 +60,14 @@ export default function ProductCard({ product }: Props) {
               {/* official=承保公司官网；aggregator=聚合站真实产品详情页 */}
               <a href={product.source_url} target="_blank" rel="noopener noreferrer">
                 {product.source_type === 'aggregator' ? '产品页' : '官网'}
+              </a>
+            </>
+          )}
+          {product.third_party_review_url && (
+            <>
+              {' · '}
+              <a href={product.third_party_review_url} target="_blank" rel="noopener noreferrer">
+                第三方测评
               </a>
             </>
           )}

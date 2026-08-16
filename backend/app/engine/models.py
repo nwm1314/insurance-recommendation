@@ -32,6 +32,11 @@ class ScoredProduct:
     source_url: str = ""
     # 链接语义：official=承保公司官网（含演示目录），aggregator=聚合站产品详情页
     source_type: str = ""
+    # 交叉验证标注（TASK-035，仅展示不参与决策）
+    official_verified: bool = False
+    dual_source_verified: bool = False
+    third_party_review_url: str | None = None
+    third_party_review_title: str | None = None
     layer: str = "core"        # basic / core / supplement
     score: float = 0.0
     score_detail: dict[str, float] = field(default_factory=dict)

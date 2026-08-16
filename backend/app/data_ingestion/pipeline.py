@@ -73,10 +73,13 @@ def ensure_seed_sources(db: Session):
         # name, platform_type, base_url, rate_limit_seconds
         ("慧择网", "third_party", "https://www.huize.com", 10),
         ("开心保", "third_party", "https://www.kaixinbao.com", 10),
-        ("深蓝保", "third_party_review", "https://www.shenlanbao.com", 15),
+        ("深蓝保", "third_party_review", "https://www.shenlanbao.com", 5),
         ("中国平安官网", "official", "https://www.pingan.com", 30),
         ("中国人寿官网", "official", "https://www.e-chinalife.com", 30),
         ("众安保险官网", "official", "https://www.zhongan.com", 65),
+        # 泰康在线（tk.cn，互联网险企）：产品目录服务端渲染且 robots Allow，
+        # 作为首批官网 L2 验证源（TASK-035）
+        ("泰康在线官网", "official", "https://www.tk.cn", 30),
     ]
     for name, platform_type, base_url, rate in seeds:
         existing = db.query(SourcePlatform).filter(SourcePlatform.name == name).first()

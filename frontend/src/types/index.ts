@@ -38,6 +38,11 @@ export interface ProductItem {
   source_url: string;
   // official=承保公司官网，aggregator=聚合站产品详情页；历史记录可能缺省
   source_type?: string;
+  // 交叉验证标注（仅展示）：官网已验证 / 双聚合站交叉印证 / 第三方测评佐证
+  official_verified?: boolean;
+  dual_source_verified?: boolean;
+  third_party_review_url?: string | null;
+  third_party_review_title?: string | null;
   score: number;
   score_detail: ScoreDetail;
   risk_warnings: RiskWarning[];

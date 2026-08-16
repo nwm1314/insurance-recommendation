@@ -187,9 +187,11 @@ def test_seed_sources_deactivates_zhongmin_and_adds_shenlanbao():
         zhongmin = db.query(SourcePlatform).filter(SourcePlatform.name == "中民保险网").first()
         assert zhongmin.is_active is False
         shenlan = db.query(SourcePlatform).filter(SourcePlatform.name == "深蓝保").first()
-        assert shenlan is not None and shenlan.rate_limit_seconds == 15
+        assert shenlan is not None and shenlan.rate_limit_seconds == 5
         kaixin = db.query(SourcePlatform).filter(SourcePlatform.name == "开心保").first()
         assert kaixin.rate_limit_seconds == 10
+        taikang_online = db.query(SourcePlatform).filter(SourcePlatform.name == "泰康在线官网").first()
+        assert taikang_online is not None and taikang_online.platform_type == "official"
     finally:
         db.close()
 

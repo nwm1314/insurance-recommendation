@@ -89,6 +89,10 @@ def approve_review_task(db: Session, task: ProductReviewTask, reviewer_id: int, 
     task.reviewed_at = utc_now()
     db.commit()
 
+    # TASK-035：发布后回算双聚合站交叉印证（仅标注，不影响在售状态）
+    from backend.app.data_ingestion.official_verification import refresh_dual_source
+    refresh_dual_source(db, target_product_id)
+
     db.refresh(task)
     return task
 

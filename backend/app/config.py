@@ -161,6 +161,10 @@ class Settings(BaseSettings):
     discovery_enabled: bool = True
     discovery_max_new_per_source: int = 20
     crawl_interval_minutes: int = 720
+    # Official-site cross-verification (L2 existence check) and third-party
+    # review matching run as part of pool maintenance; results are annotations
+    # only and never gate availability.
+    official_verification_enabled: bool = True
 
     @field_validator("app_env")
     @classmethod

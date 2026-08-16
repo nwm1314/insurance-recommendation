@@ -45,18 +45,36 @@ export default function CompareTable({ products }: Props) {
   const columns: ColumnsType<ProductItem> = [
     {
       title: '产品名称', dataIndex: 'name', key: 'name', fixed: 'left', width: 200,
+      render: (v: string, record: ProductItem) => (
+        <span>
+          {v}
+          {record.official_verified && <Tag color="green" style={{ marginLeft: 4, fontSize: 10 }}>官网已验证</Tag>}
+          {record.dual_source_verified && <Tag color="geekblue" style={{ marginLeft: 4, fontSize: 10 }}>双源验证</Tag>}
+        </span>
+      ),
     },
     {
       title: '保险公司', dataIndex: 'company', key: 'company', width: 110,
       // official=承保公司官网；aggregator=聚合站真实产品详情页
-      render: (v: string, record: ProductItem) => record.source_url ? (
+      render: (v: string, record: ProductItem) => (
         <span>
-          {v}{' '}
-          <a href={record.source_url} target="_blank" rel="noopener noreferrer">
-            {record.source_type === 'aggregator' ? '产品页' : '官网'}
-          </a>
+          {v}
+          {record.source_url && (
+            <>
+              {' '}
+              <a href={record.source_url} target="_blank" rel="noopener noreferrer">
+                {record.source_type === 'aggregator' ? '产品页' : '官网'}
+              </a>
+            </>
+          )}
+          {record.third_party_review_url && (
+            <>
+              {' '}
+              <a href={record.third_party_review_url} target="_blank" rel="noopener noreferrer">测评</a>
+            </>
+          )}
         </span>
-      ) : v,
+      ),
     },
     {
       title: '险种', dataIndex: 'type', key: 'type', width: 80,

@@ -955,3 +955,30 @@ seed 产品为虚构数据且链接曾大面积 404/403；无产品发现机制�
 **验证**：pytest **192 passed**（新增 13 用例）；E2E **35 passed**；build 通过；真实链路实测：发现 120 URL→抓取 HTTP 200→LLM 因 **API key 余额不足(402)** 回退启发式→门控正确拒绝占位草稿→2 个真实产品经人工审核发布→推荐方案含真实链接（curl 200）→165 seed 以 inactive 显式拒绝。
 **遗留**：LLM key 充值/更换后无需改码，定时任务或手动 `POST /api/admin/crawl` 即可自动填充；保费跨站交叉验证、深蓝保测评佐证接入为后续增强。
 **Commit/PR**：本工作区提交 `TASK-034`。
+
+### TASK-035：官网交叉验证与第三方测评佐证
+* **Type**：FEATURE
+* **Priority**：P1
+* **Status**：DONE
+* **Risk**：Medium
+* **Dependencies**：TASK-034
+* **Related Files / Modules**：`backend/app/data_ingestion/official_verification.py`、`backend/app/data_ingestion/review_evidence.py`、`backend/alembic/versions/20260816_0001_verification_fields.py`、`frontend/src/components/ProductCard.tsx`、`CompareTable.tsx`
+### Context
+用户确认策略：L2 存在性验证 + 双聚合站交叉印证；验证失败/不可验证仅标注不影响在售；结果页徽标展示；深蓝保链接级佐证（不复制正文）。
+### Problem
+无官网侧验证机制；产品无法区分"是否经官方来源印证"；无第三方测评佐证。
+### Constraints
+官网产品列表多为 JS 深度渲染/WAF/robots 限制（国寿/泰康集团/众安/信泰实测拿不到产品名），逐站 adapter 覆盖率有限；保费字段级比对官网无静态数据，明确排除。
+### Acceptance Criteria
+* [x] 官网 L2 验证 adapter 框架（首批泰康在线，robots `Allow: /`、产品目录服务端渲染实测可行）；无 adapter 公司诚实标 `unverifiable`
+* [x] 双聚合站交叉印证（≥2 个 third_party 平台发布；review 源不计入）；发布后自动回算
+* [x] 产品字段：`official_verification_status/url/verified_at`、`dual_source_verified`、`third_party_review_url/title`（迁移 20260816_0001）
+* [x] 深蓝保列表页抓取（/pingce/list1..6，实测 58-60 篇真实文章）+ 产品名互含+险种双信号匹配
+* [x] 结果页/对比表徽标（官网已验证/双源验证）与"第三方测评"外链
+* [x] 推荐 API 携带全部标注字段
+### Out of Scope
+保费字段级官网比对；复制测评正文（版权）；绕过 WAF。
+### Handoff（2026-08-16 完成）
+**实测**：达尔文12号（开心保人工审核发布）→ 深蓝保匹配命中真实测评文章（curl 200）→ 推荐 API 携带测评标题与链接；大护甲/大黄蜂官网验证如实标 `unverifiable`（两家无 adapter）；匹配经模糊更新至既有产品行并因"发布即上架"修复自动回在售。
+**遗留**：LLM key 余额恢复后聚合站批量发布将自动填充双源/测评标注；更多官网 adapter（探测到服务端产品目录的站）按 `OFFICIAL_SITE_ADAPTERS` 框架逐站追加。
+**Commit/PR**：本工作区提交 `TASK-035`。

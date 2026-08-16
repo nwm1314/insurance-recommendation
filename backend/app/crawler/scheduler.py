@@ -58,8 +58,11 @@ def run_all_enabled_jobs() -> dict:
 
 def run_product_pool_maintenance() -> dict:
     """Scheduled pool maintenance: discover new product URLs on aggregator
-    listing pages, then crawl every enabled job (new pages included)."""
+    listing pages, crawl every enabled job, run a bounded batch of official-site
+    verifications, and match third-party review articles."""
     from backend.app.data_ingestion.discovery import run_discovery_all
+    from backend.app.data_ingestion.official_verification import run_official_verifications
+    from backend.app.data_ingestion.review_evidence import match_reviews_to_products
 
     db = SessionLocal()
     try:
@@ -70,7 +73,19 @@ def run_product_pool_maintenance() -> dict:
     finally:
         db.close()
     crawl = run_all_enabled_jobs()
-    return {"discovery": discovery, "crawl": crawl}
+
+    db = SessionLocal()
+    verification: dict = {}
+    review_match: dict = {}
+    try:
+        verification = run_official_verifications(db)
+        review_match = match_reviews_to_products(db)
+    except Exception as exc:
+        logger.exception("scheduled verification/review-match failed")
+        verification = review_match = {"error": str(exc)}
+    finally:
+        db.close()
+    return {"discovery": discovery, "crawl": crawl, "verification": verification, "review_match": review_match}
 
 
 def register_crawl_jobs() -> None:
