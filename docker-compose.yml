@@ -42,7 +42,7 @@ services:
       FIRST_ADMIN_PASSWORD: ${FIRST_ADMIN_PASSWORD:-}
       DISABLE_SCHEDULER_IN_TESTS: ${DISABLE_SCHEDULER_IN_TESTS:-false}
       SCORING_WEIGHTS_FAIL_FAST: ${SCORING_WEIGHTS_FAIL_FAST:-true}
-      LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY is required (fill it in .env, otherwise AI 专家模式 silently degrades to rule mode)}
+      LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY is required (fill it in .env, otherwise AI 解释模式 silently degrades to rule mode)}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com/v1}
       LLM_MODEL: ${LLM_MODEL:-deepseek-v4-flash}
       LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-2048}

@@ -12,7 +12,7 @@ export default function RegisterPage() {
   return (
     <Card style={{ maxWidth: 420, margin: '48px auto', padding: '0 16px' }}>
       <Title level={3}>注册账号</Title>
-      <Text type="secondary">首个注册用户会自动成为管理员；后续用户默认为普通用户。</Text>
+      <Text type="secondary">注册后将创建普通用户账号；管理员账号由既有管理员或部署配置创建。</Text>
       <Form layout="vertical" style={{ marginTop: 24 }} onFinish={async (values) => {
         setLoading(true);
         try {
