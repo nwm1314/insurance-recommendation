@@ -45,12 +45,16 @@ export default function CompareTable({ products }: Props) {
   const columns: ColumnsType<ProductItem> = [
     {
       title: '产品名称', dataIndex: 'name', key: 'name', fixed: 'left', width: 200,
-      render: (v: string, record: ProductItem) =>
-        record.source_url ? (
-          <a href={record.source_url} target="_blank" rel="noopener noreferrer">{v}</a>
-        ) : v,
     },
-    { title: '保险公司', dataIndex: 'company', key: 'company', width: 100 },
+    {
+      title: '保险公司', dataIndex: 'company', key: 'company', width: 110,
+      // 演示目录没有真实产品详情页，外链仅指向承保公司官网
+      render: (v: string, record: ProductItem) => record.source_url ? (
+        <span>
+          {v} <a href={record.source_url} target="_blank" rel="noopener noreferrer">官网</a>
+        </span>
+      ) : v,
+    },
     {
       title: '险种', dataIndex: 'type', key: 'type', width: 80,
       render: (v: string) => <Tag>{v}</Tag>,

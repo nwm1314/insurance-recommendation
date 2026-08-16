@@ -37,13 +37,7 @@ export default function ProductCard({ product }: Props) {
       style={{ marginBottom: 12 }}
       title={
         <span>
-          {product.source_url ? (
-            <a href={product.source_url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 500 }}>
-              {product.name}
-            </a>
-          ) : (
-            <Text strong>{product.name}</Text>
-          )}
+          <Text strong>{product.name}</Text>
           <Tag color={LAYER_COLORS[product.layer]} style={{ marginLeft: 8, fontSize: 11 }}>
             {LAYER_LABELS[product.layer]}
           </Tag>
@@ -52,7 +46,16 @@ export default function ProductCard({ product }: Props) {
       extra={<RiskBadge warnings={product.risk_warnings} />}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-        <Text type="secondary">{product.company} · {product.type}</Text>
+        <Text type="secondary">
+          {product.company} · {product.type}
+          {product.source_url && (
+            <>
+              {' · '}
+              {/* 演示目录没有真实产品详情页，外链仅指向承保公司官网 */}
+              <a href={product.source_url} target="_blank" rel="noopener noreferrer">官网</a>
+            </>
+          )}
+        </Text>
         <span>
           <Text style={{ fontSize: 13 }}>年保费 </Text>
           <Text strong style={{ fontSize: 15, color: '#1677ff' }}>{formatPremium(product.premium, product.premium_max)}</Text>
