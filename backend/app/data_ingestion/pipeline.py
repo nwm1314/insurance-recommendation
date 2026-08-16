@@ -62,15 +62,23 @@ EVIDENCE_FIELDS = [
 
 
 def ensure_seed_sources(db: Session):
+    """Register the maintained crawl source platforms (idempotent).
+
+    Aggregator sites are the primary product source; insurer official sites are
+    supplementary verification sources. zhongmin.cn robots.txt disallows all
+    crawling (`Disallow: /`) so it is deactivated, never crawled. Rates follow
+    each site's robots.txt (e.g. zhongan Crawl-delay: 60).
+    """
     seeds = [
-        ("慧择网", "third_party", "https://www.huize.com"),
-        ("开心保", "third_party", "https://www.kaixinbao.com"),
-        ("中民保险网", "third_party", "https://www.zhongmin.cn"),
-        ("中国平安官网", "official", "https://www.pingan.com"),
-        ("中国人寿官网", "official", "https://www.e-chinalife.com"),
-        ("众安保险官网", "official", "https://www.zhongan.com"),
+        # name, platform_type, base_url, rate_limit_seconds
+        ("慧择网", "third_party", "https://www.huize.com", 10),
+        ("开心保", "third_party", "https://www.kaixinbao.com", 10),
+        ("深蓝保", "third_party_review", "https://www.shenlanbao.com", 15),
+        ("中国平安官网", "official", "https://www.pingan.com", 30),
+        ("中国人寿官网", "official", "https://www.e-chinalife.com", 30),
+        ("众安保险官网", "official", "https://www.zhongan.com", 65),
     ]
-    for name, platform_type, base_url in seeds:
+    for name, platform_type, base_url, rate in seeds:
         existing = db.query(SourcePlatform).filter(SourcePlatform.name == name).first()
         if existing is None:
             db.add(SourcePlatform(
@@ -78,18 +86,33 @@ def ensure_seed_sources(db: Session):
                 platform_type=platform_type,
                 base_url=base_url,
                 robots_url=f"{base_url.rstrip('/')}/robots.txt",
+                rate_limit_seconds=rate,
             ))
+        else:
+            existing.platform_type = platform_type
+            existing.base_url = base_url
+            existing.robots_url = f"{base_url.rstrip('/')}/robots.txt"
+            existing.rate_limit_seconds = rate
+            existing.is_active = True
+    # robots.txt 全站禁止抓取的站点停用（保留历史页面/运行记录供追溯）
+    retired = db.query(SourcePlatform).filter(SourcePlatform.name == "中民保险网").first()
+    if retired is not None and retired.is_active:
+        retired.is_active = False
     db.commit()
 
 
 def ensure_seed_products_if_empty(db: Session):
-    """Seed the product catalog on first boot so a fresh deployment is usable.
+    """Seed the demo product catalog on first boot (opt-in).
 
-    The documented deployment flow (alembic migrations only) does not populate
-    the products table. An empty catalog makes both the rule engine and the AI
-    engine return empty packages (AI mode silently degrades to rule mode).
+    The production product pool is built from crawled, reviewed aggregator
+    data; the 165-product demo catalog is only seeded when SEED_DEMO_PRODUCTS
+    is enabled (local demos / E2E). It must stay off in production so the
+    recommendation pool only contains real, traceable products.
     """
+    from backend.app.config import settings
     from backend.app.models.product import Product
+    if not settings.seed_demo_products:
+        return
     if db.query(Product).count() > 0:
         return
     from backend.scripts.seed import seed
@@ -182,6 +205,13 @@ def create_extraction_review(
     task = ProductReviewTask(product_draft_id=draft.id, status="pending")
     db.add(task)
     db.commit()
+    db.refresh(task)
+
+    # TASK-034: LLM 高置信草稿直接自动发布（带完整性与精确匹配门控 + 审计），
+    # 其余留在人工审核队列。失败不影响草稿本身。
+    from backend.app.data_ingestion.auto_publish import try_auto_publish
+    try_auto_publish(db, task, draft, extractor)
+
     db.refresh(task)
     return task
 

@@ -147,6 +147,21 @@ class Settings(BaseSettings):
     security_headers: bool = True
     hsts_enabled: bool = False
 
+    # ---- Product pool maintenance (aggregator-primary strategy) ----
+    # Seed the 165-product demo catalog on an empty database. The production
+    # product pool is built from crawled, reviewed aggregator data, so seeding
+    # demo products defaults to off; E2E and local demos set it to true.
+    seed_demo_products: bool = False
+    # Auto-publish crawled drafts that clear the confidence and completeness
+    # gate; anything else waits in the manual review queue.
+    auto_publish_enabled: bool = True
+    auto_publish_confidence: float = 0.8
+    # Discover new product detail URLs from aggregator listing pages and
+    # register crawl jobs for them.
+    discovery_enabled: bool = True
+    discovery_max_new_per_source: int = 20
+    crawl_interval_minutes: int = 720
+
     @field_validator("app_env")
     @classmethod
     def validate_app_env(cls, value: str) -> str:

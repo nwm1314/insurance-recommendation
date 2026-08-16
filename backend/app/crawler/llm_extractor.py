@@ -61,7 +61,8 @@ def extract_product(text: str) -> dict | None:
                 model=settings.llm_model,
                 messages=[
                     {"role": "system", "content": EXTRACT_PROMPT},
-                    {"role": "user", "content": text[:8000]},
+                    # 24k 字符兼顾覆盖产品页保费/责任段落与 LLM token 成本
+                    {"role": "user", "content": text[:24000]},
                 ],
                 response_format={"type": "json_object"},
                 timeout=settings.llm_read_timeout,

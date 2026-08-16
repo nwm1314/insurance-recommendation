@@ -60,7 +60,9 @@ def fetch_source_page(page: SourcePage, retries: int = 2, timeout_ms: int = 2000
             text, html, http_status = fetch_page_text(page.url, timeout=timeout_ms)
             if not text and http_status not in (404, 410):
                 raise ValueError("empty page text")
-            return FetchResult(text=text[:12000], html=html, http_status=http_status)
+            # 归档上限须覆盖完整产品详情页：LLM 抽取依赖页面中后部的保费/
+            # 保障责任段落，12k 截断会掐掉关键数据（TASK-034 提高到 48k）。
+            return FetchResult(text=text[:48000], html=html, http_status=http_status)
         except Exception as exc:
             last_error = exc
 

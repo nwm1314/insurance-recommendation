@@ -450,10 +450,14 @@ def test_ai_rerank_catches_client_initialization_failure(monkeypatch):
     ) is None
 
 
-def test_seed_products_if_empty_is_idempotent():
+def test_seed_products_if_empty_is_idempotent(monkeypatch):
+    from backend.app.config import settings
     from backend.app.data_ingestion.pipeline import ensure_seed_products_if_empty
     from backend.app.models.product import Product
 
+    # TASK-034 后演示目录默认关闭（生产产品池只含真实抓取数据），
+    # 显式开启以验证幂等语义。
+    monkeypatch.setattr(settings, "seed_demo_products", True)
     db = SessionLocal()
     try:
         assert db.query(Product).count() == 0

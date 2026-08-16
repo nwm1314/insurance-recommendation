@@ -22,9 +22,17 @@ def _heuristic_extract(text: str, html: str | None, url: str) -> dict:
     name = "待审核产品"
     if html:
         soup = BeautifulSoup(html, "html.parser")
-        title = soup.find("h1") or soup.find("title")
+        # 产品详情页的 title 通常为「产品名-站点名」；logo 的 <h1> 往往是站点
+        # 名，优先取 title 首段才是产品名。
+        title = soup.find("title")
         if title and title.get_text(strip=True):
-            name = title.get_text(strip=True)[:120]
+            name = title.get_text(strip=True).split("-")[0].split("|")[0].strip()[:120] or "待审核产品"
+        if name == "待审核产品":
+            h1 = soup.find("h1")
+            if h1 and h1.get_text(strip=True):
+                candidate = h1.get_text(strip=True)[:120]
+                if candidate and not candidate.endswith(("保险网", "官网")):
+                    name = candidate
     elif text:
         name = text.splitlines()[0][:120]
 

@@ -63,7 +63,11 @@ def approve_review_task(db: Session, task: ProductReviewTask, reviewer_id: int, 
         if off_shelf:
             update_product(db, target_product_id, {"status": 0}, commit=False)
         else:
-            update_product(db, target_product_id, draft_data_to_product_payload(draft.draft_data), commit=False)
+            payload = draft_data_to_product_payload(draft.draft_data)
+            # 发布最新审核数据即重新上架：目标产品可能此前被停售/下架，
+            # 保持 status=0 会让真实数据永远进不了推荐池。
+            payload["status"] = 1
+            update_product(db, target_product_id, payload, commit=False)
     else:
         payload = draft_data_to_product_payload(draft.draft_data)
         if not payload.get("name") or not payload.get("company") or not payload.get("type"):

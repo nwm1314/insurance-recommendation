@@ -13,16 +13,22 @@ logger = logging.getLogger(__name__)
 
 scheduler = BackgroundScheduler()
 
-CRAWL_JOB_ID = "crawl_all_enabled_jobs"
 DEFAULT_INTERVAL_MINUTES = 720
 
 
 def crawl_interval_minutes() -> int:
-    raw = os.environ.get("CRAWL_INTERVAL_MINUTES", str(DEFAULT_INTERVAL_MINUTES))
+    from backend.app.config import settings
+
+    raw = os.environ.get("CRAWL_INTERVAL_MINUTES", "")
+    if not raw:
+        return max(settings.crawl_interval_minutes, 1)
     try:
         return max(int(raw), 1)
     except ValueError:
         return DEFAULT_INTERVAL_MINUTES
+
+
+POOL_MAINTENANCE_JOB_ID = "product_pool_maintenance"
 
 
 def run_all_enabled_jobs() -> dict:
@@ -50,13 +56,33 @@ def run_all_enabled_jobs() -> dict:
     return {"triggered": triggered, "skipped": skipped, "failed": failed}
 
 
+def run_product_pool_maintenance() -> dict:
+    """Scheduled pool maintenance: discover new product URLs on aggregator
+    listing pages, then crawl every enabled job (new pages included)."""
+    from backend.app.data_ingestion.discovery import run_discovery_all
+
+    db = SessionLocal()
+    try:
+        discovery = run_discovery_all(db)
+    except Exception as exc:
+        discovery = [{"error": str(exc)}]
+        logger.exception("scheduled discovery failed")
+    finally:
+        db.close()
+    crawl = run_all_enabled_jobs()
+    return {"discovery": discovery, "crawl": crawl}
+
+
 def register_crawl_jobs() -> None:
-    """Register the periodic crawl job (interval from CRAWL_INTERVAL_MINUTES)."""
+    """Register the periodic pool maintenance job (discovery + crawl).
+
+    Interval comes from CRAWL_INTERVAL_MINUTES / settings.crawl_interval_minutes.
+    """
     scheduler.add_job(
-        run_all_enabled_jobs,
+        run_product_pool_maintenance,
         "interval",
         minutes=crawl_interval_minutes(),
-        id=CRAWL_JOB_ID,
+        id=POOL_MAINTENANCE_JOB_ID,
         replace_existing=True,
         max_instances=1,
         coalesce=True,

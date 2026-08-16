@@ -191,7 +191,7 @@ def test_scheduler_registers_interval_job_idempotently(monkeypatch):
     if scheduler_module.scheduler.running:
         scheduler_module.scheduler.shutdown(wait=False)
     try:
-        scheduler_module.scheduler.remove_job(scheduler_module.CRAWL_JOB_ID)
+        scheduler_module.scheduler.remove_job(scheduler_module.POOL_MAINTENANCE_JOB_ID)
     except Exception:
         pass
 
@@ -200,13 +200,13 @@ def test_scheduler_registers_interval_job_idempotently(monkeypatch):
     scheduler_module.init_scheduler()
     assert scheduler_module.scheduler.running
 
-    job = scheduler_module.scheduler.get_job(scheduler_module.CRAWL_JOB_ID)
+    job = scheduler_module.scheduler.get_job(scheduler_module.POOL_MAINTENANCE_JOB_ID)
     assert job is not None
     assert job.trigger.interval.total_seconds() == 123 * 60
 
     # re-registration while running replaces the existing job (single instance)
     scheduler_module.register_crawl_jobs()
-    matches = [j for j in scheduler_module.scheduler.get_jobs() if j.id == scheduler_module.CRAWL_JOB_ID]
+    matches = [j for j in scheduler_module.scheduler.get_jobs() if j.id == scheduler_module.POOL_MAINTENANCE_JOB_ID]
     assert len(matches) == 1, "interval job must not be registered twice"
 
     # init_scheduler is idempotent once running
