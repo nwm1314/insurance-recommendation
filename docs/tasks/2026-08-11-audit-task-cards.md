@@ -33,6 +33,7 @@
 | TASK-031 | 统一 AI 命名并修正注册页过期文案 | DOCS | P2 | Low | TASK-022,TASK-024 | DONE |
 | TASK-032 | compose 透传 Cookie/代理/安全头变量 | INFRA | P1 | Medium | TASK-023 | DONE |
 | TASK-033 | 账户页删除画像/记录增加确认 | UX | P3 | Low | TASK-003 | DONE |
+| TASK-034 | 聚合站为主的真实产品池采集与维护 | FEATURE | P1 | High | TASK-005,TASK-008,TASK-018 | DONE |
 
 ## Task Dependency Graph
 
@@ -924,3 +925,33 @@ TASK-014 观察项：账户页删除画像/记录为直接删除，与 AdminPage
 **验证结果**：E2E 全量 **35 passed**（含取消与确认双路径）；`npm run build` 通过。
 **遗留/新增任务**：无。批量删除、回收站在范围内外。
 **Commit/PR**：本工作区提交 `TASK-033`。
+
+### TASK-034：聚合站为主的真实产品池采集与维护
+* **Type**：FEATURE
+* **Priority**：P1
+* **Status**：DONE
+* **Risk**：High
+* **Dependencies**：TASK-005, TASK-008, TASK-018
+* **Related Files / Modules**：`backend/app/data_ingestion/discovery.py`、`backend/app/data_ingestion/auto_publish.py`、`backend/app/crawler/scheduler.py`、`backend/app/api/recommend.py`、`backend/scripts/`、`docker-compose.yml`
+### Context
+用户确认策略：以慧择/开心保/深蓝保等聚合站产品数据为主、官网作补充验证，搭建并维护真实产品池；立即下架 165 个虚构 seed；LLM 高置信草稿自动发布；docker 部署 + 定时调度；全险种铺量。
+### Problem
+seed 产品为虚构数据且链接曾大面积 404/403；无产品发现机制（源页全靠手工登记）；发布全靠人工审核；抓取文本 12k 截断掐掉 LLM 关键数据。
+### Goal
+发现→抓取→抽取→门控发布→推荐→真实链接的自动化闭环，演示数据与生产数据彻底分离。
+### Constraints
+遵守 robots.txt（中民全站禁抓已停用源）；未达门槛草稿不得影响推荐（TASK-018 边界）；模糊匹配不得自动覆盖既有产品。
+### Acceptance Criteria
+* [x] 发现模块从慧择/开心保列表页注册真实产品页任务（实测慧择 105、开心保 15 个 URL）
+* [x] LLM 高置信 + 字段完整 + 精确匹配门控自动发布并写审计；启发式/低置信/模糊匹配留人工队列
+* [x] seed 门控下架（SEED_DEMO_PRODUCTS 默认 false；开发库 165 个已 status=0）
+* [x] compose 透传产品池维护变量；定时任务=发现+抓取
+* [x] 推荐返回 source_type（official/aggregator），前端标"官网/产品页"；真实链接实测 200
+* [x] 首批真实产品经人工审核路径发布并进入推荐方案
+### Out of Scope
+绕过 robots/WAF；保费跨站交叉自动验证；实时核保。
+### Handoff（2026-08-16 完成）
+**实际改动**：新增 `discovery.py`（两站 canonical 化发现 + robots 校验 + 审计）、`auto_publish.py`（门控：LLM-only、置信度≥阈值、占位/缺字段拦截、off_shelf 仅精确匹配自动下架、模糊匹配必人工）、`scripts/run_first_pool_batch.py`/`manual_publish_first_batch.py`/`offshelf_seed_products.py`；`pipeline.py`（seed 门控、源配置刷新[中民停用/深蓝保新增/众安 65s]、审核链挂钩自动发布）；`review.py`（发布即重新上架 bug 修复：matched 更新路径 status=1）；`scheduler.py`（`product_pool_maintenance` = 发现+抓取）；抓取归档截断 12k→48k、LLM 输入 8k→24k；启发式产品名取 title 首段；`recommend.py`/`combo_builder.py`/前端贯通 `source_type`。
+**验证**：pytest **192 passed**（新增 13 用例）；E2E **35 passed**；build 通过；真实链路实测：发现 120 URL→抓取 HTTP 200→LLM 因 **API key 余额不足(402)** 回退启发式→门控正确拒绝占位草稿→2 个真实产品经人工审核发布→推荐方案含真实链接（curl 200）→165 seed 以 inactive 显式拒绝。
+**遗留**：LLM key 充值/更换后无需改码，定时任务或手动 `POST /api/admin/crawl` 即可自动填充；保费跨站交叉验证、深蓝保测评佐证接入为后续增强。
+**Commit/PR**：本工作区提交 `TASK-034`。

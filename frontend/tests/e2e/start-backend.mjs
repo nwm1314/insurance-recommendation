@@ -39,6 +39,9 @@ const env = {
   RATE_LIMIT_USER_PER_DAY: '100000',
   LLM_API_KEY: '',
   DISABLE_SCHEDULER_IN_TESTS: 'true',
+  // E2E 需要非空演示目录驱动规则引擎推荐（生产产品池来自真实抓取数据）
+  SEED_DEMO_PRODUCTS: 'true',
+  AUTO_PUBLISH_ENABLED: 'false',
 };
 
 function fail(message) {

@@ -235,6 +235,21 @@ SECURITY_HEADERS: ${SECURITY_HEADERS:-true}
 HSTS_ENABLED: ${HSTS_ENABLED:-false}
 ```
 
+### 产品池维护（聚合站采集 + 自动发布）
+
+backend 服务已按以下键透传产品池维护配置（默认值见 `.env.example`）：
+
+```yaml
+CRAWL_INTERVAL_MINUTES: ${CRAWL_INTERVAL_MINUTES:-720}   # 定时维护间隔（分钟）
+SEED_DEMO_PRODUCTS: ${SEED_DEMO_PRODUCTS:-false}         # 演示目录注入（生产必须 false）
+AUTO_PUBLISH_ENABLED: ${AUTO_PUBLISH_ENABLED:-true}      # 高置信草稿自动发布
+AUTO_PUBLISH_CONFIDENCE: ${AUTO_PUBLISH_CONFIDENCE:-0.8}
+DISCOVERY_ENABLED: ${DISCOVERY_ENABLED:-true}            # 聚合站列表页产品发现
+DISCOVERY_MAX_NEW_PER_SOURCE: ${DISCOVERY_MAX_NEW_PER_SOURCE:-20}
+```
+
+部署后产品池由定时任务自动维护：先从慧择/开心保列表页发现新产品详情页并注册采集任务，再抓取全部启用任务；LLM 提取的高置信草稿（字段完整、精确匹配）自动发布并写审计（`review.auto_publish`），其余进入管理后台人工审核队列。首次部署后产品池为空属预期（演示目录默认关闭），需要等首批采集发布完成或由管理员在后台手工录入产品。抓取遵守各站 robots.txt 与平台限速（慧择/开心保 10s，众安 65s 遵循 Crawl-delay: 60）。
+
 ### CORS 白名单
 
 - 后端 `allow_credentials=True` 配合 httpOnly Cookie 认证，`CORS_ALLOW_ORIGINS` 必须配置**显式来源白名单**（逗号分隔，`http`/`https` + 主机名，可含端口）。来源值禁止带路径、查询串或片段（`http://example.com/api`、`http://example.com?x=1` 等会在启动时校验报错）。
