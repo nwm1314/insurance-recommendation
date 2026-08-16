@@ -1,4 +1,6 @@
 import logging
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from backend.app.database import get_db
@@ -19,6 +21,19 @@ from backend.app.services.auth_service import save_recommendation_record
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["recommend"])
+
+
+def _source_type(product) -> str:
+    """official = 承保公司官网域名；aggregator = 聚合站产品详情页。"""
+    url = getattr(product, "source_url", None) or ""
+    if not url:
+        return ""
+    from backend.scripts.seed import COMPANY_URLS
+
+    official = COMPANY_URLS.get(getattr(product, "company", "") or "")
+    if official and (urlparse(url).netloc or "") == (urlparse(official).netloc or ""):
+        return "official"
+    return "aggregator"
 
 
 def _run_rule_engine(db: Session, user: UserProfile) -> dict:
@@ -56,6 +71,7 @@ def _run_rule_engine(db: Session, user: UserProfile) -> dict:
             "deductible": getattr(product, "deductible", None),
             "sum_insured": product.sum_insured_max or 0,
             "source_url": product.source_url or "",
+            "source_type": _source_type(product),
             "score": detail["total"],
             "score_detail": {k: v for k, v in detail.items() if k != "total"},
             "risk_warnings": risk_warnings,
@@ -289,6 +305,7 @@ def _build_response(user: UserProfile, result: dict, engine_mode: str = "rule") 
                         "type": sp.type, "layer": sp.layer,
                         "premium": sp.premium, "premium_max": sp.premium_max, "deductible": sp.deductible, "sum_insured": sp.sum_insured,
                         "source_url": sp.source_url,
+                        "source_type": sp.source_type,
                         "score": sp.score, "score_detail": sp.score_detail,
                         "risk_warnings": sp.risk_warnings,
                         "recommendation_reasons": sp.recommendation_reasons,

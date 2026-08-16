@@ -51,8 +51,10 @@ export default function ProductCard({ product }: Props) {
           {product.source_url && (
             <>
               {' · '}
-              {/* 演示目录没有真实产品详情页，外链仅指向承保公司官网 */}
-              <a href={product.source_url} target="_blank" rel="noopener noreferrer">官网</a>
+              {/* official=承保公司官网；aggregator=聚合站真实产品详情页 */}
+              <a href={product.source_url} target="_blank" rel="noopener noreferrer">
+                {product.source_type === 'aggregator' ? '产品页' : '官网'}
+              </a>
             </>
           )}
         </Text>

@@ -36,6 +36,8 @@ export interface ProductItem {
   deductible: number | null;
   sum_insured: number;
   source_url: string;
+  // official=承保公司官网，aggregator=聚合站产品详情页；历史记录可能缺省
+  source_type?: string;
   score: number;
   score_detail: ScoreDetail;
   risk_warnings: RiskWarning[];

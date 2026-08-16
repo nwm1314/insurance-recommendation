@@ -48,10 +48,13 @@ export default function CompareTable({ products }: Props) {
     },
     {
       title: '保险公司', dataIndex: 'company', key: 'company', width: 110,
-      // 演示目录没有真实产品详情页，外链仅指向承保公司官网
+      // official=承保公司官网；aggregator=聚合站真实产品详情页
       render: (v: string, record: ProductItem) => record.source_url ? (
         <span>
-          {v} <a href={record.source_url} target="_blank" rel="noopener noreferrer">官网</a>
+          {v}{' '}
+          <a href={record.source_url} target="_blank" rel="noopener noreferrer">
+            {record.source_type === 'aggregator' ? '产品页' : '官网'}
+          </a>
         </span>
       ) : v,
     },

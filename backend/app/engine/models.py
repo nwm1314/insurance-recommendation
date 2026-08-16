@@ -30,6 +30,8 @@ class ScoredProduct:
     deductible: float | None = None
     sum_insured: float = 0.0
     source_url: str = ""
+    # 链接语义：official=承保公司官网（含演示目录），aggregator=聚合站产品详情页
+    source_type: str = ""
     layer: str = "core"        # basic / core / supplement
     score: float = 0.0
     score_detail: dict[str, float] = field(default_factory=dict)
