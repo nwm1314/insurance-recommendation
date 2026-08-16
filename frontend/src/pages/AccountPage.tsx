@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { Alert, Button, Card, Descriptions, Input, List, Modal, Space, Tag, Typography, message } from 'antd';
+import { Alert, Button, Card, Descriptions, Input, List, Modal, Popconfirm, Space, Tag, Typography, message } from 'antd';
 import { deleteProfile, deleteRecommendation, fetchMe, fetchMyProfiles, fetchMyRecommendations, fetchProfileDetail, getStoredUser, logout, saveProfile, updateProfile } from '../api/auth';
 import type { AuthUser, RecommendationRecord, SavedProfile, UserProfile } from '../types';
 
@@ -131,7 +131,9 @@ export default function AccountPage() {
             <List.Item
               actions={[
                 <Link key="view" to={`/result?recordId=${record.id}`}>查看结果</Link>,
-                <Button key="delete" type="link" size="small" danger onClick={async () => { await handleDeleteRecord(record.id); }}>删除</Button>,
+                <Popconfirm key="delete" title="确认删除该推荐记录？" description="删除后不可恢复。" onConfirm={() => handleDeleteRecord(record.id)}>
+                  <Button type="link" size="small" danger>删除</Button>
+                </Popconfirm>,
               ]}
             >
               <List.Item.Meta
@@ -166,7 +168,9 @@ export default function AccountPage() {
                   }
                 }}>加载到表单</Button>,
                 <Button key="edit" type="link" size="small" onClick={() => handleEditProfile(profile)}>编辑</Button>,
-                <Button key="delete" type="link" size="small" danger onClick={async () => { await handleDeleteProfile(profile.id); }}>删除</Button>,
+                <Popconfirm key="delete" title="确认删除该画像？" description="删除后不可恢复。" onConfirm={() => handleDeleteProfile(profile.id)}>
+                  <Button type="link" size="small" danger>删除</Button>
+                </Popconfirm>,
               ]}
             >
               <List.Item.Meta

@@ -27,12 +27,14 @@ test.describe('推荐关键旅程（真实后端）', () => {
     // 1. 注册并登录
     await registerUser(page, email);
 
-    // 2. 问卷四步 → 提交推荐（真实 rule engine）
-    await fillQuestionnaire(page);
+    // 2. 问卷四步 → 提交推荐（真实 rule engine；勾选已有商业保险以触发画像评估的重复保障标记）
+    await fillQuestionnaire(page, '30', { commercialCoverage: true });
     await submitRecommendation(page);
     await expect(page.getByText('极速规则模式')).toBeVisible();
     await expect(page.locator('.ant-tabs-tab').first()).toBeVisible();
     await expect(page.locator('.ant-table').first()).toBeVisible();
+    // TASK-029：真实 API 带出 profile_assessment，结果页展示重复保障提示
+    await expect(page.getByText('重复保障提示')).toBeVisible({ timeout: 10000 });
 
     // 3. 结果页保存画像（隐私提示 → 命名 → 保存）
     await saveProfileFromResult(page, profileName);
@@ -67,11 +69,20 @@ test.describe('推荐关键旅程（真实后端）', () => {
     await expect(page.locator('text=已加载保存的画像').first()).toBeVisible({ timeout: 15000 });
     await expect(page.locator('input#age')).toHaveValue('30');
 
-    // 7. 删除画像（账户页删除为直接调用，无 Popconfirm）
+    // 7. 删除画像（TASK-033：Popconfirm 确认——取消不删除，确认后删除）
     await page.goto('/account');
     await page.waitForLoadState('networkidle', { timeout: 15000 });
     const item = page.locator('.ant-list-item').filter({ hasText: profileName });
     await item.getByRole('button', { name: /删\s*除/ }).click();
+    const confirmBtn = page.locator('.ant-popconfirm .ant-btn-primary');
+    await expect(confirmBtn).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('确认删除该画像？')).toBeVisible();
+    await page.locator('.ant-popconfirm .ant-btn:not(.ant-btn-primary)').click();
+    await expect(item).toHaveCount(1);
+    await expect(page.locator('text=画像已删除')).toHaveCount(0);
+    await item.getByRole('button', { name: /删\s*除/ }).click();
+    await expect(confirmBtn).toBeVisible({ timeout: 5000 });
+    await confirmBtn.dispatchEvent('click');
     await expect(page.locator('text=画像已删除')).toBeVisible({ timeout: 10000 });
     await expect(page.locator('.ant-list-item').filter({ hasText: profileName })).toHaveCount(0);
   });
