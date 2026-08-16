@@ -4,7 +4,7 @@
 
 ## Review Summary
 
-2026-08-11 基线卡 TASK-001～028 均已 DONE（迁移门禁、目录 CRUD、抓取审核发布、画像消费、安全边界、E2E、文档与 Git 基线）。2026-08-16 复核：官方卡无 TODO，但 Handoff 遗留了 5 项未成卡缺口——`/api/recommend` 未接线 `profile_assessment`、套餐丢失 `recommendation_reasons`、AI/注册文案与实现不一致、compose 未透传安全变量、账户页删除无确认。已补 TASK-029～033。
+2026-08-11 基线卡 TASK-001～028 均已 DONE（迁移门禁、目录 CRUD、抓取审核发布、画像消费、安全边界、E2E、文档与 Git 基线）。2026-08-16 复核补齐 TASK-029～033；2026-08-16 全部闭环：TASK-029（画像评估接入 API 与结果页）、TASK-030（套餐理由拷贝）、TASK-031（AI 命名/注册文案）、TASK-032（compose 安全变量）、TASK-033（删除确认）均 DONE。当前无 TODO 任务卡。
 
 ## Task Index
 
@@ -28,11 +28,11 @@
 | TASK-026 | 调查并优化前端生产包体积 | OPTIMIZATION | P3 | Low | TASK-014 | DONE |
 | TASK-027 | 修复结果页历史视图无限重复拉取 | BUG | P2 | Medium | TASK-001 | DONE |
 | TASK-028 | 修复登录 401 拦截器吞掉错误提示 | BUG | P2 | Low | TASK-023 | DONE |
-| TASK-029 | 将画像评估字段接入推荐 API 与结果页 | RELIABILITY | P1 | Medium | TASK-020 | TODO |
+| TASK-029 | 将画像评估字段接入推荐 API 与结果页 | RELIABILITY | P1 | Medium | TASK-020 | DONE |
 | TASK-030 | 套餐产品拷贝 recommendation_reasons | BUG | P1 | Medium | TASK-016,TASK-020 | DONE |
-| TASK-031 | 统一 AI 命名并修正注册页过期文案 | DOCS | P2 | Low | TASK-022,TASK-024 | TODO |
+| TASK-031 | 统一 AI 命名并修正注册页过期文案 | DOCS | P2 | Low | TASK-022,TASK-024 | DONE |
 | TASK-032 | compose 透传 Cookie/代理/安全头变量 | INFRA | P1 | Medium | TASK-023 | DONE |
-| TASK-033 | 账户页删除画像/记录增加确认 | UX | P3 | Low | TASK-003 | TODO |
+| TASK-033 | 账户页删除画像/记录增加确认 | UX | P3 | Low | TASK-003 | DONE |
 
 ## Task Dependency Graph
 
@@ -692,7 +692,7 @@ Cookie 默认非 Secure、模板无 Cookie 配置；无条件信任 XFF；限流
 
 基线卡（已完成）：1. TASK-017；2. TASK-022、TASK-023、TASK-009、TASK-008；3. TASK-005；4. TASK-018；5. TASK-020、TASK-016；6. TASK-001、TASK-003、TASK-015；7. TASK-014；8. TASK-024、TASK-025、TASK-026。
 
-2026-08-16 增量：TASK-030 已完成。剩余可并行 TASK-032 / TASK-031 / TASK-033；TASK-029 依赖引擎层已有 `filter_candidate_pool_with_profile`。建议顺序：TASK-032 先做（部署安全），再 TASK-029，最后 TASK-031/033。
+2026-08-16 增量：TASK-029～033 已全部完成并验证（后端 176 passed、前端 build 通过、E2E 35 passed）。当前无 TODO 任务卡，任务清单闭环。
 
 ### TASK-027：修复结果页历史视图无限重复拉取
 * **Type**：BUG
@@ -760,7 +760,7 @@ TASK-014 E2E 实测（页面快照）：错误密码登录后停留在 /login �
 ### TASK-029：将画像评估字段接入推荐 API 与结果页
 * **Type**：RELIABILITY
 * **Priority**：P1
-* **Status**：TODO
+* **Status**：DONE
 * **Risk**：Medium
 * **Dependencies**：TASK-020
 * **Related Files / Modules**：`backend/app/api/recommend.py`、`backend/app/engine/rule_engine.py`、`backend/tests/test_profile_consumption.py`、`frontend/src/types/index.ts`、`frontend/src/pages/ResultPage.tsx`
@@ -775,14 +775,23 @@ TASK-020 已在引擎层通过 `filter_candidate_pool_with_profile` 暴露 `unkn
 ### Constraints
 不得给出承保保证或医疗诊断；未知项只提示“不参与规则筛选”；不得破坏既有 packages/评分契约；历史记录若缺该字段须兼容。
 ### Acceptance Criteria
-* [ ] `/api/recommend` 响应含 `profile_assessment.health.unknown_conditions` / `recognized` / `coverage` / `preference`
-* [ ] 规则/AI/降级三种模式均带出该字段
-* [ ] 结果页展示未知健康项与重复保障提示；刷新历史记录缺字段不崩溃
-* [ ] 既有推荐回归测试通过
+* [x] `/api/recommend` 响应含 `profile_assessment.health.unknown_conditions` / `recognized` / `coverage` / `preference`
+* [x] 规则/AI/降级三种模式均带出该字段
+* [x] 结果页展示未知健康项与重复保障提示；刷新历史记录缺字段不崩溃
+* [x] 既有推荐回归测试通过
 ### Out of Scope
 改变硬规则；分数级降权（属 scoring）；家庭共享画像。
-### Handoff
-应用本文件 Standard Handoff。
+### Handoff（2026-08-16 完成）
+**问题确认**：属实。`recommend.py` 只调用 `filter_candidate_pool_with_reasons`，响应无画像级字段。
+**实际改动文件**：
+1. `backend/app/api/recommend.py`：改调 `filter_candidate_pool_with_profile`（rule 引擎单次调用同时拿到候选/拒绝/画像评估），`_run_rule_engine` 结果写入 `profile_assessment`；`_build_response` 透传该字段并为缺失场景（防御）提供空结构兜底。AI/降级模式共用 `_build_response`，三模式均带出。
+2. `frontend/src/types/index.ts`：新增 `ProfileAssessment`/`RecognizedHealthCondition` 类型；`RecommendationResult.profile_assessment` 声明为可选（历史记录兼容）。
+3. `frontend/src/pages/ResultPage.tsx`：新增“画像评估提示”卡片——未知健康项（warning，文案明确“不参与规则筛选、不构成承保判断，以核保为准”）与重复保障提示（info，列出已有保障标签与可能重叠险种，提示核对既有保单）；全部走可选链，历史记录缺字段不渲染、不崩溃。
+4. `backend/tests/test_profile_consumption.py`：新增 `test_api_recommend_returns_profile_assessment_all_modes`——同一画像（含未识别健康项+已有商业保险+险种偏好）在 rule/degraded（无 key）/ai（mock LLM）三种模式下断言 HTTP 响应的 `profile_assessment` 完整结构。
+5. E2E：`recommend-flow.spec.ts` journey 勾选“已有商业保险”断言真实 API 下“重复保障提示”可见；`helpers.ts` `fillQuestionnaire` 支持 `commercialCoverage` 选项；`mobile-flow.spec.ts` mock 数据补 `profile_assessment` 并断言“画像评估提示/未识别健康项/重复保障提示”渲染。
+**验证结果**：`pytest -q` 全量 **176 passed**（原 175 + 新 1）；`npm run build` 通过；E2E **35 passed**。
+**遗留/新增任务**：无。分数级降权、家庭共享画像在范围内外。
+**Commit/PR**：本工作区提交 `TASK-029`。
 
 ### TASK-030：套餐产品拷贝 recommendation_reasons
 * **Type**：BUG
@@ -819,7 +828,7 @@ TASK-020 已在引擎层通过 `filter_candidate_pool_with_profile` 暴露 `unkn
 ### TASK-031：统一 AI 命名并修正注册页过期文案
 * **Type**：DOCS
 * **Priority**：P2
-* **Status**：TODO
+* **Status**：DONE
 * **Risk**：Low
 * **Dependencies**：TASK-022, TASK-024
 * **Related Files / Modules**：`frontend/src/components/EngineSwitch.tsx`、`frontend/src/pages/ResultPage.tsx`、`frontend/src/pages/RegisterPage.tsx`、`README.md`、`develop_guidence.md`
@@ -834,14 +843,23 @@ TASK-020/022/024 已把能力边界改为“AI 只解释、公开注册不再提
 ### Constraints
 不得把计划写成能力；不改 `engine_mode` 枚举值（`ai`/`rule`/`degraded`）。
 ### Acceptance Criteria
-* [ ] 开关、结果页标签不再称“AI 专家”
-* [ ] 注册页不再承诺首用户管理员
-* [ ] README/开发指南对应标题与实现一致
-* [ ] 相关 E2E 文案定位不回归
+* [x] 开关、结果页标签不再称“AI 专家”
+* [x] 注册页不再承诺首用户管理员
+* [x] README/开发指南对应标题与实现一致
+* [x] 相关 E2E 文案定位不回归
 ### Out of Scope
 重写全部营销文案；改 AI 决策权。
-### Handoff
-应用本文件 Standard Handoff。
+### Handoff（2026-08-16 完成）
+**问题确认**：全部属实，另发现 `docker-compose.yml:45` 的 `LLM_API_KEY` 报错文案也写“AI 专家模式”，一并修正。
+**实际改动文件**：
+1. `frontend/src/components/EngineSwitch.tsx`：“AI 专家模式”→“AI 解释模式”。
+2. `frontend/src/pages/ResultPage.tsx`：`engineModeLabel` 的 ai 分支“AI 专家模式”→“AI 解释模式”（`engine_mode` 枚举值未动）。
+3. `frontend/src/pages/RegisterPage.tsx`：删除“首个注册用户会自动成为管理员”过期承诺，改为“注册后将创建普通用户账号；管理员账号由既有管理员或部署配置创建”（与 TASK-022 受控引导语义一致）。
+4. `README.md:24`、`develop_guidence.md:59`：“AI 专家模式”→“AI 解释模式”。
+5. `docker-compose.yml`：`LLM_API_KEY` 必填报错文案同步为“AI 解释模式”。
+**验证结果**：全局扫描非历史文档/任务卡无“AI 专家”“首个注册用户”残留；E2E 全量 **35 passed**（“极速规则模式”等既有文案定位不受影响）；`npm run build` 通过。
+**遗留/新增任务**：无。`docs/tasks` 历史证据与 `docs/superpowers/plans` 历史计划中的旧称谓按 TASK-024 历史快照原则保留。
+**Commit/PR**：本工作区提交 `TASK-031`。
 
 ### TASK-032：compose 透传 Cookie/代理/安全头变量
 * **Type**：INFRA
@@ -879,7 +897,7 @@ TLS 终止、宿主机 Nginx CSP。
 ### TASK-033：账户页删除画像/记录增加确认
 * **Type**：UX
 * **Priority**：P3
-* **Status**：TODO
+* **Status**：DONE
 * **Risk**：Low
 * **Dependencies**：TASK-003
 * **Related Files / Modules**：`frontend/src/pages/AccountPage.tsx`
@@ -894,9 +912,15 @@ TASK-014 观察项：账户页删除画像/记录为直接删除，与 AdminPage
 ### Constraints
 不得改变删除 API 语义与所有者隔离。
 ### Acceptance Criteria
-* [ ] 删除记录/画像均需确认；取消不删除
-* [ ] 确认后仍走既有成功/失败提示
+* [x] 删除记录/画像均需确认；取消不删除
+* [x] 确认后仍走既有成功/失败提示
 ### Out of Scope
 批量删除、回收站。
-### Handoff
-应用本文件 Standard Handoff。
+### Handoff（2026-08-16 完成）
+**问题确认**：属实。两处删除按钮均为直接调用 `handleDeleteRecord`/`handleDeleteProfile`。
+**实际改动文件**：
+1. `frontend/src/pages/AccountPage.tsx`：推荐历史与保存画像的删除按钮均包 `Popconfirm`（标题+“删除后不可恢复”说明，风格与 AdminPage 一致）；确认后才调用既有删除函数，成功/失败提示不变；取消不发请求。
+2. `frontend/tests/e2e/recommend-flow.spec.ts`：删除画像步骤升级——断言确认弹窗出现、点“取消”后画像仍在列表且无成功提示、再点删除并确认后“画像已删除”出现且列表项消失。
+**验证结果**：E2E 全量 **35 passed**（含取消与确认双路径）；`npm run build` 通过。
+**遗留/新增任务**：无。批量删除、回收站在范围内外。
+**Commit/PR**：本工作区提交 `TASK-033`。
