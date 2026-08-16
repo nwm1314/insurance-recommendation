@@ -425,6 +425,79 @@ def test_api_recommend_accepts_coverage_preference_and_unknown_health():
             db.close()
 
 
+def test_api_recommend_returns_profile_assessment_all_modes(monkeypatch):
+    """TASK-029：/api/recommend 的 HTTP 响应在 rule/degraded/ai 三种引擎模式均带出画像评估。"""
+    import backend.app.api.recommend as recommend_api
+    from backend.app.config import settings
+    from backend.app.engine.ai_engine import AIRecommendationExplanation, render_ai_explanation
+
+    _seed_products()
+
+    payload = {
+        "age": 30,
+        "gender": "male",
+        "annual_income": 200000,
+        "job_class": 2,
+        "life_stage": "married_with_kids",
+        "family_burden": "dual",
+        "health_status": "substandard",
+        "health_issues": ["hypertension_l1", "mystery_condition"],
+        "existing_coverage": ["commercial"],
+        "budget_ratio": 0.08,
+        "preferred_type": "重疾险",
+        "preferred_companies": [],
+    }
+
+    def assert_assessment(data):
+        assessment = data["profile_assessment"]
+        assert assessment["health"]["unknown_conditions"] == ["mystery_condition"]
+        assert any(c["code"] == "hypertension_l1" for c in assessment["health"]["recognized"])
+        assert assessment["health"]["recognized"][0]["label"]
+        assert assessment["health"]["recognized"][0]["note"]
+        assert assessment["coverage"]["raw"] == ["commercial"]
+        assert assessment["coverage"]["labels"]["commercial"] == "已有商业保险"
+        assert assessment["coverage"]["marked_types"]
+        assert assessment["preference"]["raw"] == "重疾险"
+        assert assessment["preference"]["normalized"] == "重疾险"
+        assert assessment["preference"]["valid"] is True
+        assert assessment["assessments"]
+        assert all(a["traceable_reasons"] is not None for a in assessment["assessments"])
+
+    with TestClient(app) as client:
+        # 规则模式
+        rule = client.post("/api/recommend", json={**payload, "enable_llm_engine": False})
+        assert rule.status_code == 200, rule.text
+        assert rule.json()["engine_mode"] == "rule"
+        assert_assessment(rule.json())
+
+        # 降级模式：开启 AI 但未配置 LLM key
+        monkeypatch.setattr(settings, "llm_api_key", "")
+        degraded = client.post("/api/recommend", json={**payload, "enable_llm_engine": True})
+        assert degraded.status_code == 200, degraded.text
+        assert degraded.json()["engine_mode"] == "degraded"
+        assert_assessment(degraded.json())
+
+        # AI 模式：mock LLM 返回，解释路径仍带出同一画像评估
+        monkeypatch.setattr(settings, "llm_api_key", "test-key")
+
+        def fake_ai_rerank_sync(user, package_products, packages):
+            explanation = AIRecommendationExplanation(
+                selected_product_ids=[package_products[0].product_id],
+                summary="结构化摘要",
+                reasoning=["保障组合完整"],
+                risk_notes=["以健康告知和核保为准"],
+                comparison_notes=[],
+            )
+            return render_ai_explanation(explanation), explanation
+
+        monkeypatch.setattr(recommend_api, "ai_rerank_sync", fake_ai_rerank_sync)
+        ai = client.post("/api/recommend", json={**payload, "enable_llm_engine": True})
+        assert ai.status_code == 200, ai.text
+        assert ai.json()["engine_mode"] == "ai"
+        assert ai.json()["ai_explanation"]["summary"] == "结构化摘要"
+        assert_assessment(ai.json())
+
+
 def test_ai_prompt_claims_no_selection_power():
     assert "规则引擎" in STRUCTURED_SYSTEM_PROMPT
     assert "不得声称" in STRUCTURED_SYSTEM_PROMPT

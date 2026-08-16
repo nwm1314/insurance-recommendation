@@ -7,7 +7,7 @@ from backend.app.models.auth import User
 from backend.app.config import safe_llm_base_url
 from backend.app.schemas.user_profile import UserProfileRequest
 from backend.app.engine.models import UserProfile, ScoredProduct
-from backend.app.engine.rule_engine import filter_candidate_pool_with_reasons, get_allowed_types, get_type_budget_limits
+from backend.app.engine.rule_engine import filter_candidate_pool_with_profile, get_allowed_types, get_type_budget_limits
 from backend.app.engine.scoring import score_product, apply_price_scoring
 from backend.app.engine.budget import calculate_budget, calculate_sum_insured
 from backend.app.engine.combo_builder import build_combos
@@ -28,7 +28,7 @@ def _run_rule_engine(db: Session, user: UserProfile) -> dict:
     sum_insured = calculate_sum_insured(user)
 
     # Step 2: Rule tree filtering. Hard rules run before AI and cannot be overridden.
-    candidates, rejected_products = filter_candidate_pool_with_reasons(db, user)
+    candidates, rejected_products, profile_assessment = filter_candidate_pool_with_profile(db, user)
 
     # Step 3: type-specific 8-dimension scoring
     scored = []
@@ -79,6 +79,7 @@ def _run_rule_engine(db: Session, user: UserProfile) -> dict:
         "hard_rule_summary": _build_hard_rule_summary(user),
         "not_recommended_summary": _summarize_rejections(rejected_products),
         "not_recommended_details": _serialize_rejection_details(rejected_products),
+        "profile_assessment": profile_assessment,
     }
 
 
@@ -308,5 +309,11 @@ def _build_response(user: UserProfile, result: dict, engine_mode: str = "rule") 
         "coverage_gap_summary": result.get("coverage_gap_summary", []),
         "not_recommended_summary": result.get("not_recommended_summary", []),
         "not_recommended_details": result.get("not_recommended_details", []),
+        "profile_assessment": result.get("profile_assessment") or {
+            "health": {"recognized": [], "unknown_conditions": [], "notes": []},
+            "coverage": {"raw": [], "labels": {}, "marked_types": []},
+            "preference": {"raw": None, "normalized": None, "valid": True},
+            "assessments": [],
+        },
         "disclaimer": "本方案由算法生成，仅供参考，最终承保以保险公司官方条款为准",
     }

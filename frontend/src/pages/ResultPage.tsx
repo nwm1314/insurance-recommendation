@@ -147,6 +147,12 @@ export default function ResultPage() {
   const quoteMax = packageMaxes.length ? Math.max(...packageMaxes) : null;
   const quoteUnknownMax = result.packages.some((p) => p.products.some((pp) => pp.premium_max == null));
 
+  // 画像评估（TASK-029）：历史记录可能缺该字段，全部走可选链容忍
+  const assessment = result.profile_assessment;
+  const unknownConditions = assessment?.health?.unknown_conditions ?? [];
+  const markedTypes = assessment?.coverage?.marked_types ?? [];
+  const coverageLabelText = Object.values(assessment?.coverage?.labels ?? {}).join('、');
+
   const formatPkgTotal = (pkg: { total_premium: number; total_premium_max: number | null }) => {
     if (pkg.total_premium_max != null && pkg.total_premium_max > pkg.total_premium) {
       return `¥${pkg.total_premium.toLocaleString()}~¥${pkg.total_premium_max.toLocaleString()}`;
@@ -154,7 +160,7 @@ export default function ResultPage() {
     return `¥${pkg.total_premium.toLocaleString()}起`;
   };
 
-  const engineModeLabel = result.engine_mode === 'ai' ? 'AI 专家模式' : result.engine_mode === 'degraded' ? '降级模式（AI 繁忙，已自动切换）' : '极速规则模式';
+  const engineModeLabel = result.engine_mode === 'ai' ? 'AI 解释模式' : result.engine_mode === 'degraded' ? '降级模式（AI 繁忙，已自动切换）' : '极速规则模式';
   const reasonCodeLabel = (code: string) => ({
     inactive: '停售',
     type_forbidden: '硬规则禁推',
@@ -220,6 +226,28 @@ export default function ResultPage() {
           </Card>
         </Col>
       </Row>
+
+      {(unknownConditions.length > 0 || markedTypes.length > 0) && (
+        <Card title="画像评估提示" size="small" style={{ marginTop: 16 }}>
+          {unknownConditions.length > 0 && (
+            <Alert
+              type="warning"
+              showIcon
+              message="未识别健康项"
+              description={`${unknownConditions.join('、')}：该健康项本次仅作记录展示，不参与规则筛选，也不构成承保判断；如需核保结论，请以产品健康告知和保险公司核保为准。`}
+              style={{ marginBottom: markedTypes.length > 0 ? 12 : 0 }}
+            />
+          )}
+          {markedTypes.length > 0 && (
+            <Alert
+              type="info"
+              showIcon
+              message="重复保障提示"
+              description={`检测到已有保障（${coverageLabelText || markedTypes.join('、')}），以下险种可能与既有保单责任重叠：${markedTypes.join('、')}。建议加保前先核对既有保单条款，本提示不构成承保判断。`}
+            />
+          )}
+        </Card>
+      )}
 
       {result.llm_narrative && (
         <Card style={{ marginTop: 16, background: '#e6f7ff' }}>

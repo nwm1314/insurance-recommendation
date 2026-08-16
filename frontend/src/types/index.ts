@@ -61,6 +61,38 @@ export interface ComboPackage {
   products: ProductItem[];
 }
 
+export interface RecognizedHealthCondition {
+  code: string;
+  condition: string;
+  label: string;
+  level: string;
+  note: string;
+}
+
+export interface ProfileAssessment {
+  health: {
+    recognized: RecognizedHealthCondition[];
+    unknown_conditions: string[];
+    notes: string[];
+  };
+  coverage: {
+    raw: string[];
+    labels: Record<string, string>;
+    marked_types: string[];
+  };
+  preference: {
+    raw: string | null;
+    normalized: string | null;
+    valid: boolean;
+  };
+  assessments: Array<{
+    product_id: number;
+    name: string;
+    type: string;
+    traceable_reasons: string[];
+  }>;
+}
+
 export interface RecommendationResult {
   user_profile: Record<string, unknown>;
   budget_analysis: {
@@ -100,6 +132,8 @@ export interface RecommendationResult {
     reason_code: string;
     reason: string;
   }>;
+  // 可选字段：TASK-029 之前保存的历史记录不含画像评估，前端须容忍缺失
+  profile_assessment?: ProfileAssessment | null;
   disclaimer: string;
 }
 

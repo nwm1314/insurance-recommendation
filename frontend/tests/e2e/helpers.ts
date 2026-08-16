@@ -33,12 +33,19 @@ export async function logout(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/login/);
 }
 
-export async function fillQuestionnaire(page: Page, age = '30'): Promise<void> {
+export async function fillQuestionnaire(
+  page: Page,
+  age = '30',
+  opts: { commercialCoverage?: boolean } = {},
+): Promise<void> {
   await page.goto('/');
   await expect(page.locator('text=智能保险推荐').first()).toBeVisible();
   await page.locator('input#age').fill(age);
   await page.locator('button:has-text("下一步")').click();
   await expect(page.locator('text=职业类别')).toBeVisible();
+  if (opts.commercialCoverage) {
+    await page.locator('.ant-checkbox-wrapper', { hasText: '已有商业保险' }).click();
+  }
   await page.locator('button:has-text("下一步")').click();
   await expect(page.locator('text=健康状态')).toBeVisible();
   await page.locator('button:has-text("下一步")').click();
