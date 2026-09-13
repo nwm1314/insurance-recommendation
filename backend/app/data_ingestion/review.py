@@ -54,6 +54,9 @@ def approve_review_task(db: Session, task: ProductReviewTask, reviewer_id: int, 
     from backend.app.services.product_service import create_product, update_product
 
     target_product_id = product_id or draft.matched_product_id
+    # 只认 off_shelf（404/410 可靠停售）；off_shelf_candidate（正文关键词命中，
+    # INS-004）按普通产品数据处理，approve 不执行下架。人工确认停售走
+    # admin PUT /api/products/{id} 置 status=0。
     off_shelf = bool((draft.draft_data or {}).get("off_shelf"))
 
     if off_shelf and target_product_id is None:

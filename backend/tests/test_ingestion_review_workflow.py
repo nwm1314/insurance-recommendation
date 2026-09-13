@@ -378,7 +378,13 @@ def test_crawl_changed_content_creates_new_review(client, admin_headers, monkeyp
 # 停售检测：关键词、404/内容缺失；批准后停售、回滚恢复
 # ---------------------------------------------------------------------------
 
-def test_crawl_off_shelf_keyword_draft_and_approve_deactivates(client, admin_headers, monkeypatch):
+def test_crawl_off_shelf_keyword_draft_needs_confirmation_keeps_status(client, admin_headers, monkeypatch):
+    """INS-004 语义更新：正文关键词命中不再自动下架。
+
+    关键词命中只产生 off_shelf_candidate + 证据（自动发布被拒、草稿留人工）；
+    人工 approve 后按普通产品数据更新，产品保持原 status——确认停售需走
+    admin PUT 显式下架。
+    """
     db = SessionLocal()
     try:
         from backend.app.services.product_service import create_product
@@ -393,7 +399,10 @@ def test_crawl_off_shelf_keyword_draft_and_approve_deactivates(client, admin_hea
 
     page_url = f"https://example.com/off-shelf-{uuid.uuid4().hex[:8]}"
     _page_id, job_id = _create_page_and_job(client, admin_headers, url=page_url)
-    monkeypatch.setattr(crawl_product_pipeline, "fetch_source_page", _make_fetch("本产品已停售，暂不可投保"))
+    monkeypatch.setattr(
+        crawl_product_pipeline, "fetch_source_page",
+        _make_fetch("热门推荐栏位：以下产品已停售。本产品详情：停售检测品 医疗险 保费500元"),
+    )
     monkeypatch.setattr(
         crawl_product_pipeline, "extract_product_data",
         _make_extract({"name": "停售检测品", "company": "检测公司", "type": "医疗险", "premium_min": 500}),
@@ -406,15 +415,20 @@ def test_crawl_off_shelf_keyword_draft_and_approve_deactivates(client, admin_hea
         assert run.status == "success"
 
         draft = db.query(ProductDraft).order_by(ProductDraft.id.desc()).first()
-        assert draft.draft_data.get("off_shelf") is True
+        # 关键词命中：候选标记 + 证据，不是可靠停售
+        assert draft.draft_data.get("off_shelf") is None
+        assert draft.draft_data.get("off_shelf_candidate") is True
+        evidence = draft.draft_data.get("off_shelf_evidence")
+        assert evidence and evidence[0]["keyword"] == "已停售"
+        assert "以下产品已停售" in evidence[0]["context"]
         assert draft.matched_product_id == existing_id
         task = db.query(ProductReviewTask).filter(ProductReviewTask.product_draft_id == draft.id).first()
+        assert task.status == "pending", "keyword candidate must not auto-publish"
         task_id = task.id
-        version_count_before = db.query(ProductVersion).count()
     finally:
         db.close()
 
-    approved = client.post(f"/api/admin/ingestion/review-tasks/{task_id}/approve", headers=admin_headers, json={"note": "确认停售"})
+    approved = client.post(f"/api/admin/ingestion/review-tasks/{task_id}/approve", headers=admin_headers, json={"note": "人工复核：页面栏位非本产品停售"})
     assert approved.status_code == 200, approved.text
     assert approved.json()["status"] == "approved"
     assert approved.json()["product_id"] == existing_id
@@ -422,21 +436,10 @@ def test_crawl_off_shelf_keyword_draft_and_approve_deactivates(client, admin_hea
     db = SessionLocal()
     try:
         product = db.query(Product).filter(Product.id == existing_id).first()
-        assert product.status == 0, "approved off-shelf draft must deactivate the product"
+        assert product.status == 1, "keyword candidate approval must not deactivate the product"
         version = db.query(ProductVersion).filter(ProductVersion.product_id == existing_id).order_by(ProductVersion.id.desc()).first()
         assert version is not None
-        assert version.version_data.get("off_shelf") is True
-        assert db.query(ProductVersion).count() == version_count_before + 1
-        version_id = version.id
-    finally:
-        db.close()
-
-    rolled_back = client.post(f"/api/admin/ingestion/versions/{version_id}/rollback", headers=admin_headers)
-    assert rolled_back.status_code == 200, rolled_back.text
-    db = SessionLocal()
-    try:
-        product = db.query(Product).filter(Product.id == existing_id).first()
-        assert product.status == 1, "rollback must reactivate the product"
+        assert version.version_data.get("off_shelf") is None
     finally:
         db.close()
 
@@ -487,7 +490,23 @@ def test_crawl_404_empty_content_marks_off_shelf_with_identity(client, admin_hea
     assert approved.status_code == 200, approved.text
     db = SessionLocal()
     try:
-        assert db.query(Product).filter(Product.id == existing_id).first().status == 0
+        product = db.query(Product).filter(Product.id == existing_id).first()
+        assert product.status == 0
+    finally:
+        db.close()
+
+    # 404 版本回滚是显式动作：恢复在售（停售自动下架→回滚复活语义保持）
+    db = SessionLocal()
+    try:
+        version = db.query(ProductVersion).filter(ProductVersion.product_id == existing_id).order_by(ProductVersion.id.desc()).first()
+        version_id = version.id
+    finally:
+        db.close()
+    rolled_back = client.post(f"/api/admin/ingestion/versions/{version_id}/rollback", headers=admin_headers)
+    assert rolled_back.status_code == 200, rolled_back.text
+    db = SessionLocal()
+    try:
+        assert db.query(Product).filter(Product.id == existing_id).first().status == 1
     finally:
         db.close()
 

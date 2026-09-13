@@ -56,6 +56,10 @@ def evaluate_auto_publish(draft: ProductDraft, extractor: str) -> tuple[bool, st
 
     # 停售是保守方向：停售检测器（非 LLM）的草稿只要精确匹配既有产品即可
     # 自动下架，避免死链产品继续被推荐。
+    # INS-004：正文关键词命中的候选（off_shelf_candidate）不自动下架，留
+    # 人工确认；404/410 产生的 off_shelf 保持自动下架语义。
+    if data.get("off_shelf_candidate"):
+        return False, "off_shelf_needs_confirmation"
     if data.get("off_shelf"):
         if draft.matched_product_id is None:
             return False, "off_shelf_without_match"

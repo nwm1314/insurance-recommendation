@@ -192,7 +192,26 @@ def compute_md5(text: str) -> str:
     return hashlib.md5(text.encode("utf-8")).hexdigest()
 
 
+OFF_SHELF_KEYWORDS = ["已停售", "暂不可投保", "已下架", "停止销售", "不在售"]
+
+
+def detect_off_shelf_evidence(text: str) -> list[dict]:
+    """返回每个停售关键词命中的证据 {keyword, context}。
+
+    context 为命中位置前后各约 60 字符（换行折叠为空格），供人工审核
+    判断关键词是否真的指向本产品（聚合站常出现"以下产品已停售"栏位）。
+    """
+    evidence: list[dict] = []
+    for kw in OFF_SHELF_KEYWORDS:
+        start = text.find(kw)
+        if start == -1:
+            continue
+        ctx_start = max(0, start - 60)
+        context = text[ctx_start:start + len(kw) + 60].replace("\n", " ")
+        evidence.append({"keyword": kw, "context": context})
+    return evidence
+
+
 def detect_off_shelf(text: str) -> bool:
     """Detect if page contains off-shelf keywords"""
-    keywords = ["已停售", "暂不可投保", "已下架", "停止销售", "不在售"]
-    return any(kw in text for kw in keywords)
+    return bool(detect_off_shelf_evidence(text))
