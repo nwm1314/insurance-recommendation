@@ -11,7 +11,10 @@ rules:
 - only exact name+company matches may be auto-updated. Fuzzy matches
   (e.g. 达尔文7号 vs 达尔文8号) go to manual review - auto-overwriting a
   different product with new data would corrupt the catalog;
-- placeholder values (待审核产品 / 待审核 / 0 premium) block auto-publish.
+- placeholder values (待审核产品 / 待审核 / 0 premium) block auto-publish;
+- drafts missing rule fields (min_age/max_age/job_class_limit) or with unknown
+  health_requirements stay in manual review (INS-001) -宽松默认值不得伪装成
+  真实投保规则自动发布。
 """
 import logging
 import re
@@ -75,6 +78,12 @@ def evaluate_auto_publish(draft: ProductDraft, extractor: str) -> tuple[bool, st
         return False, "missing_premium"
     if not data.get("sum_insured_max"):
         return False, "missing_sum_insured"
+    # INS-001：规则三要素（投保年龄区间/职业类别）任一未知（LLM 应输出
+    # null）不得自动发布，防止宽松默认值伪装成真实投保规则进入推荐池。
+    if any(data.get(key) is None for key in ("min_age", "max_age", "job_class_limit")):
+        return False, "missing_rule_fields"
+    if data.get("health_requirements") is None:
+        return False, "unknown_health_requirements"
     # 险种经 schema 归一化后总是合法枚举，但页面不是产品详情页时 LLM 可能
     # 硬凑；要求 URL 与发现模式一致由调度侧保证，这里只拦明显占位。
     if draft.matched_product_id is not None and not _is_exact_match(draft, data):

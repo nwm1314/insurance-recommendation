@@ -633,9 +633,12 @@ def test_approve_updates_matched_existing_product(client, admin_headers):
     existing_id = created.json()["id"]
 
     page_id, _job_id = _create_page_and_job(client, admin_headers)
+    # INS-001：规则三要素任一未知时草稿不输出 rule 键；本用例验证的是
+    # "匹配既有产品→更新数据"路径，需提供完整规则字段才会更新 Rule。
     task_id = _manual_extraction(client, admin_headers, page_id, {
         "name": "已存在医疗产品", "company": "已存在公司", "type": "医疗险",
-        "premium_min": 800, "premium_max": 1000, "waiting_period_days": 60,
+        "premium_min": 800, "premium_max": 1000,
+        "min_age": 0, "max_age": 60, "job_class_limit": 6, "waiting_period_days": 60,
     })
 
     db = SessionLocal()
@@ -723,7 +726,7 @@ def test_approve_is_atomic_single_transaction(client, admin_headers, monkeypatch
     page_id, _job_id = _create_page_and_job(client, admin_headers)
     task_id = _manual_extraction(client, admin_headers, page_id, {
         "name": "原子产品", "company": "原子公司", "type": "医疗险",
-        "premium_min": 500, "min_age": 0, "max_age": 60,
+        "premium_min": 500, "min_age": 0, "max_age": 60, "job_class_limit": 1,
         "benefits": [{"benefit_type": "basic", "benefit_name": "住院医疗", "benefit_amount": "100万"}],
     })
 

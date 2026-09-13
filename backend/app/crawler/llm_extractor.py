@@ -8,27 +8,28 @@ EXTRACT_PROMPT = """你是一个保险产品信息提取器。从以下网页文
   "name": "产品全称",
   "company": "保险公司",
   "type": "险种（重疾险/医疗险/意外险/定期寿险/防癌险/年金险）",
-  "premium_min": 0,
-  "premium_max": 0,
-  "sum_insured_min": 0,
-  "sum_insured_max": 0,
+  "premium_min": null,
+  "premium_max": null,
+  "sum_insured_min": null,
+  "sum_insured_max": null,
   "coverage_period": "保障期限",
   "payment_period": "缴费期限",
   "source_url": "原始页面URL",
-  "disease_count": 0,
+  "deductible": null,
+  "disease_count": null,
   "mild_disease_count": 0,
   "moderate_disease_count": 0,
   "has_mild_coverage": false,
   "has_moderate_coverage": false,
   "has_multi_claim": false,
-  "min_age": 0,
-  "max_age": 100,
-  "job_class_limit": 6,
-  "waiting_period_days": 90,
-  "has_insured_waiver": false,
-  "has_insurer_waiver": false,
-  "health_disclosure_count": 0,
-  "health_requirements": [],
+  "min_age": null,
+  "max_age": null,
+  "job_class_limit": null,
+  "waiting_period_days": null,
+  "has_insured_waiver": null,
+  "has_insurer_waiver": null,
+  "health_disclosure_count": null,
+  "health_requirements": null,
   "benefits": [
     {
       "benefit_type": "basic",
@@ -40,7 +41,8 @@ EXTRACT_PROMPT = """你是一个保险产品信息提取器。从以下网页文
 }
 
 规则：
-- 无法提取的数值字段填 0 或默认值
+- 无法从页面确认的字段一律输出 null（禁止填 0、禁止猜测默认值）；保费/保额数字必须是页面原文数字，不得推算
+- 允许输出 null 的字段：min_age, max_age, job_class_limit, waiting_period_days, has_insured_waiver, has_insurer_waiver, health_disclosure_count, health_requirements, premium_min, premium_max, sum_insured_min, sum_insured_max, deductible, disease_count
 - type 必须严格匹配枚举值
 - benefits 数组从网页保障责任段落提取
 - 所有金额单位为"元"

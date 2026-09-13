@@ -77,12 +77,15 @@ def _clean_db(monkeypatch):
 
 
 def _draft_data(name="泰康全能保2026", company="泰康在线", type_="意外险", url="https://www.huize.com/apps/cps/index/product/detail?prodId=1"):
+    # INS-001 起自动发布要求规则三要素与健康要求已知，缺省即留人工审核。
     return {
         "name": name, "company": company, "type": type_,
         "premium_min": 200, "premium_max": 400,
         "sum_insured_min": 10, "sum_insured_max": 100,
         "coverage_period": "1年", "payment_period": "1年",
         "source_url": url,
+        "min_age": 0, "max_age": 65, "job_class_limit": 1,
+        "waiting_period_days": 0, "health_requirements": [],
     }
 
 

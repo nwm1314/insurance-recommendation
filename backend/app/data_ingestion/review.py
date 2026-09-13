@@ -17,6 +17,9 @@ RULE_FIELDS = [
 ]
 BENEFIT_FIELDS = ["benefit_type", "benefit_name", "benefit_amount", "payment_limit", "desc"]
 ZERO_IS_UNKNOWN = {"premium_min", "premium_max", "sum_insured_min", "sum_insured_max"}
+# 规则三要素任一未知就不输出 rule 键：发布后产品无 Rule 行，推荐池以
+# missing_rule 拒绝，避免用默认值虚构投保规则（INS-001）。
+RULE_REQUIRED_KEYS = ("min_age", "max_age", "job_class_limit")
 
 
 def draft_data_to_product_payload(draft_data: dict) -> dict:
@@ -31,7 +34,7 @@ def draft_data_to_product_payload(draft_data: dict) -> dict:
             continue
         payload[key] = value
     rule = {key: draft_data[key] for key in RULE_FIELDS if draft_data.get(key) is not None}
-    if rule:
+    if rule and all(draft_data.get(key) is not None for key in RULE_REQUIRED_KEYS):
         payload["rule"] = rule
     benefits = []
     for item in draft_data.get("benefits") or []:

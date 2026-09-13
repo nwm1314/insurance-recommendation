@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 
 PRODUCT_TYPES = ["医疗险", "意外险", "重疾险", "定期寿险", "防癌险", "年金险"]
@@ -28,27 +28,30 @@ class ProductDraftSchema(BaseModel):
     name: str = Field(min_length=1)
     company: str = Field(min_length=1)
     type: Literal["医疗险", "意外险", "重疾险", "定期寿险", "防癌险", "年金险"]
-    premium_min: float = Field(default=0, ge=0)
-    premium_max: float = Field(default=0, ge=0)
-    sum_insured_min: float = Field(default=0, ge=0)
-    sum_insured_max: float = Field(default=0, ge=0)
+    premium_min: float | None = Field(default=None, ge=0)
+    premium_max: float | None = Field(default=None, ge=0)
+    sum_insured_min: float | None = Field(default=None, ge=0)
+    sum_insured_max: float | None = Field(default=None, ge=0)
     coverage_period: str = ""
     payment_period: str = ""
     source_url: str | None = None
-    disease_count: int = Field(default=0, ge=0)
+    deductible: float | None = Field(default=None, ge=0)
+    disease_count: int | None = Field(default=None, ge=0)
     mild_disease_count: int = Field(default=0, ge=0)
     moderate_disease_count: int = Field(default=0, ge=0)
     has_mild_coverage: bool = False
     has_moderate_coverage: bool = False
     has_multi_claim: bool = False
-    min_age: int = Field(default=0, ge=0, le=120)
-    max_age: int = Field(default=100, ge=0, le=120)
-    job_class_limit: int = Field(default=6, ge=1, le=6)
-    waiting_period_days: int = Field(default=90, ge=0)
-    has_insured_waiver: bool = False
-    has_insurer_waiver: bool = False
-    health_disclosure_count: int = Field(default=0, ge=0)
-    health_requirements: list[Any] = Field(default_factory=list)
+    # 规则相关字段允许 None（LLM 无法确认时输出 null）：宽松默认值一旦发布
+    # 成真实投保规则，会把不可投保产品推荐给不符合条件的用户（INS-001）。
+    min_age: int | None = Field(default=None, ge=0, le=120)
+    max_age: int | None = Field(default=None, ge=0, le=120)
+    job_class_limit: int | None = Field(default=None, ge=1, le=6)
+    waiting_period_days: int | None = Field(default=None, ge=0)
+    has_insured_waiver: bool | None = None
+    has_insurer_waiver: bool | None = None
+    health_disclosure_count: int | None = Field(default=None, ge=0)
+    health_requirements: list[Any] | dict | None = None
     benefits: list[BenefitDraft] = Field(default_factory=list)
 
     @field_validator("type", mode="before")
@@ -65,7 +68,21 @@ class ProductDraftSchema(BaseModel):
     @field_validator("premium_max", "sum_insured_max")
     @classmethod
     def normalize_max(cls, value):
+        # None 表示"页面未披露"，必须保留为 None 而不是归零。
+        if value is None:
+            return None
         return value or 0
+
+    @model_validator(mode="after")
+    def normalize_unknown_rule_defaults(self):
+        # 旧提取口径用 0/100/6 填"无法提取"。仍返回这一全默认形态的草稿
+        # （如启发式提取器）按"规则字段未知"处理，防止未确认的宽松默认值
+        # 被当成真实投保规则自动发布。
+        if self.min_age == 0 and self.max_age == 100 and self.job_class_limit == 6:
+            self.min_age = None
+            self.max_age = None
+            self.job_class_limit = None
+        return self
 
 
 def normalize_and_validate_product(data: dict, base_confidence: float = 0.7) -> tuple[dict, float]:

@@ -97,6 +97,8 @@ def _raw_document(db, url: str = "https://www.huize.com/apps/cps/index/product/d
 
 
 def _draft_data(**overrides) -> dict:
+    # INS-001 起自动发布要求规则三要素与健康要求已知，缺省即留人工审核；
+    # 本夹具表示"字段完整、可自动发布"的形态。
     data = {
         "name": "真实产品A款",
         "company": "中国平安",
@@ -108,6 +110,11 @@ def _draft_data(**overrides) -> dict:
         "coverage_period": "1年",
         "payment_period": "1年",
         "source_url": "https://www.huize.com/apps/cps/index/product/detail?prodId=1",
+        "min_age": 0,
+        "max_age": 60,
+        "job_class_limit": 1,
+        "waiting_period_days": 30,
+        "health_requirements": [],
     }
     data.update(overrides)
     return data
@@ -249,6 +256,32 @@ def test_auto_publish_blocked_by_placeholders_and_missing_fields():
             task = create_extraction_review(db, raw, data, confidence=0.9, extractor="llm")
             assert task.status == "pending", f"case {i} must stay pending"
             drafts.append(task.product_draft_id)
+        assert db.query(Product).filter(Product.status == 1).count() == 0
+    finally:
+        db.close()
+
+
+def test_auto_publish_blocked_by_missing_rule_fields_and_unknown_health():
+    """INS-001：规则三要素任一未知、或健康要求未知的高置信 LLM 草稿留人工审核。
+
+    宽松默认值（如 min_age=0/max_age=100/job_class_limit=6 的旧口径）经 schema
+    归一化后等价于"未知"，同样不得自动发布。
+    """
+    db = SessionLocal()
+    try:
+        cases = [
+            (_draft_data(min_age=None), "missing_rule_fields"),
+            (_draft_data(max_age=None), "missing_rule_fields"),
+            (_draft_data(job_class_limit=None), "missing_rule_fields"),
+            (_draft_data(health_requirements=None), "unknown_health_requirements"),
+        ]
+        for i, (data, reason) in enumerate(cases, start=20):
+            raw = _raw_document(db, f"https://www.huize.com/apps/cps/index/product/detail?prodId={i}")
+            task = create_extraction_review(db, raw, data, confidence=0.9, extractor="llm")
+            assert task.status == "pending", f"case {i} must stay pending"
+            draft = db.query(ProductDraft).filter(ProductDraft.id == task.product_draft_id).first()
+            should, got = evaluate_auto_publish(draft, "llm")
+            assert (should, got) == (False, reason), f"case {i}: unexpected reason {got}"
         assert db.query(Product).filter(Product.status == 1).count() == 0
     finally:
         db.close()
