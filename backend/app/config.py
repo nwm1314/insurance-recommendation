@@ -1,4 +1,6 @@
-﻿import ipaddress
+﻿import hashlib
+
+import ipaddress
 import yaml
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
@@ -246,3 +248,17 @@ settings = Settings()
 # Load adjustable params from YAML
 SCORING_WEIGHTS = _load_yaml("scoring_weights.yaml")
 BUDGET_RULES = _load_yaml("budget_rules.yaml")
+
+# DATA-002：引擎/规则版本元数据。规则矩阵或评分权重变更时需手动递增对应
+# 版本，使历史推荐结果可按 meta 复现。
+ENGINE_VERSION = "1.1.0"
+# scoring_weights.yaml 顶层 version，缺失时按 "1" 兜底（校验函数容忍缺失）
+DEFAULT_SCORING_VERSION = "1"
+
+
+def scoring_weights_hash() -> str:
+    """scoring_weights.yaml 文件内容的 sha256 前 12 位（推荐结果复现用）。"""
+    path = BASE_DIR / "config" / "scoring_weights.yaml"
+    if not path.exists():
+        return ""
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:12]

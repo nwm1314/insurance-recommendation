@@ -192,6 +192,12 @@ def get_recommendation_detail(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """返回完整推荐记录。result.meta 携带复现元数据（DATA-002）：
+
+    - 按 result.meta.scoring_weights_hash 检出对应的 scoring_weights.yaml；
+    - 按 result 中的 product_id 与记录 created_at 查 ProductVersion，
+      即可还原当时的评分口径与产品事实，复现推荐结果。
+    """
     record = (
         db.query(RecommendationRecord)
         .filter(RecommendationRecord.id == record_id, RecommendationRecord.user_id == user.id)

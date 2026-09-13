@@ -96,6 +96,33 @@ def _base_payload():
     }
 
 
+def test_recommend_response_has_reproducibility_meta(client):
+    """DATA-002：响应 meta 四键非空（engine/rule/scoring 版本 + 权重 hash）。"""
+    response = client.post("/api/recommend", json=_base_payload())
+    assert response.status_code == 200, response.text
+    meta = response.json()["meta"]
+    assert set(meta) == {"engine_version", "rule_version", "scoring_version", "scoring_weights_hash"}
+    for key, value in meta.items():
+        assert value, f"meta.{key} must not be empty"
+    assert meta["scoring_version"] == "2", "scoring_weights.yaml 顶层 version 应为 2"
+
+
+def test_scoring_weights_hash_tracks_file_content(monkeypatch, tmp_path):
+    """DATA-002：scoring_weights.yaml 内容变化时 hash 随之变化。"""
+    from backend.app import config as config_module
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "scoring_weights.yaml").write_text("weights: {}\n", encoding="utf-8")
+    monkeypatch.setattr(config_module, "BASE_DIR", tmp_path)
+    first = config_module.scoring_weights_hash()
+
+    (config_dir / "scoring_weights.yaml").write_text("weights: {coverage: 1.0}\n", encoding="utf-8")
+    second = config_module.scoring_weights_hash()
+
+    assert first and second and first != second
+
+
 def test_data_stale_annotation_in_recommend_response(client):
     """DATA-001：复核缺失或超过 90 天的产品在推荐结果中标注 data_stale。"""
     from datetime import timedelta

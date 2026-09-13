@@ -5,6 +5,10 @@ from backend.app.engine.models import UserProfile
 from backend.app.engine.budget import calculate_budget
 from backend.app.engine.health import analyze_health_issues, evaluate_health_match
 
+# DATA-002：规则矩阵版本。TYPE_MATRIX 矩阵语义变更时手动递增，
+# 使历史推荐结果可按响应 meta 中的 rule_version 复现。
+RULE_VERSION = "2"
+
 # Age-type matching matrix: {age_group: {insurance_type: rule}}
 TYPE_MATRIX = {
     "0-17":    {"医疗险": "required", "意外险": "required", "重疾险": "required", "定期寿险": "forbidden", "防癌险": "forbidden"},

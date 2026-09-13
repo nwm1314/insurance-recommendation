@@ -309,6 +309,9 @@ def _build_response(user: UserProfile, result: dict, engine_mode: str = "rule") 
     si = result["sum_insured"]
     packages = result["packages"]
 
+    from backend.app.config import DEFAULT_SCORING_VERSION, ENGINE_VERSION, SCORING_WEIGHTS, scoring_weights_hash
+    from backend.app.engine.rule_engine import RULE_VERSION
+
     return {
         "user_profile": {
             "age": user.age, "gender": user.gender,
@@ -363,6 +366,15 @@ def _build_response(user: UserProfile, result: dict, engine_mode: str = "rule") 
         "llm_narrative": None,
         "ai_explanation": None,
         "engine_mode": engine_mode,
+        # DATA-002：复现元数据——按 scoring_weights_hash 检出对应配置，
+        # 按 product_id 与 created_at 查 ProductVersion 即可还原当时的
+        # 引擎/规则/评分口径与产品事实。
+        "meta": {
+            "engine_version": ENGINE_VERSION,
+            "rule_version": RULE_VERSION,
+            "scoring_version": str(SCORING_WEIGHTS.get("version") or DEFAULT_SCORING_VERSION),
+            "scoring_weights_hash": scoring_weights_hash(),
+        },
         "hard_rule_summary": result.get("hard_rule_summary", []),
         "coverage_gap_summary": result.get("coverage_gap_summary", []),
         "not_recommended_summary": result.get("not_recommended_summary", []),
