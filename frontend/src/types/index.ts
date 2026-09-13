@@ -43,6 +43,9 @@ export interface ProductItem {
   dual_source_verified?: boolean;
   third_party_review_url?: string | null;
   third_party_review_title?: string | null;
+  // 数据新鲜度标注（仅展示）：最近复核时间与是否超过 90 天未复核
+  last_verified_at?: string | null;
+  data_stale?: boolean;
   score: number;
   score_detail: ScoreDetail;
   risk_warnings: RiskWarning[];

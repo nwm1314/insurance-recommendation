@@ -87,6 +87,11 @@ def approve_review_task(db: Session, task: ProductReviewTask, reviewer_id: int, 
         version_data=draft.draft_data,
         published_by=reviewer_id,
     ))
+    # DATA-001：发布成功即视为产品数据经人工确认，刷新复核时间戳
+    from backend.app.models.product import Product
+    product_row = db.query(Product).filter(Product.id == target_product_id).first()
+    if product_row is not None:
+        product_row.last_verified_at = utc_now()
     draft.status = "published"
     draft.matched_product_id = target_product_id
     task.status = "approved"

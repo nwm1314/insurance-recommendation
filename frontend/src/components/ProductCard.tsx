@@ -47,6 +47,9 @@ export default function ProductCard({ product }: Props) {
           {product.dual_source_verified && (
             <Tag color="geekblue" style={{ fontSize: 11 }}>双源验证</Tag>
           )}
+          {product.data_stale && (
+            <Tag color="orange" style={{ fontSize: 11 }}>信息超90天未复核</Tag>
+          )}
         </span>
       }
       extra={<RiskBadge warnings={product.risk_warnings} />}

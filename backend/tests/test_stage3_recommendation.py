@@ -96,6 +96,48 @@ def _base_payload():
     }
 
 
+def test_data_stale_annotation_in_recommend_response(client):
+    """DATA-001：复核缺失或超过 90 天的产品在推荐结果中标注 data_stale。"""
+    from datetime import timedelta
+
+    from backend.app.time import utc_now
+
+    db = SessionLocal()
+    try:
+        fresh = Product(name="新鲜医疗Smoke", company="FreshCo", type="医疗险", status=1,
+                        premium_min=500, premium_max=800, sum_insured_max=300,
+                        last_verified_at=utc_now())
+        stale = Product(name="陈旧意外Smoke", company="StaleCo", type="意外险", status=1,
+                        premium_min=100, premium_max=200, sum_insured_max=100,
+                        last_verified_at=utc_now() - timedelta(days=100))
+        missing = Product(name="未复核寿险Smoke", company="MissCo", type="定期寿险", status=1,
+                          premium_min=300, premium_max=500, sum_insured_max=100,
+                          last_verified_at=None)
+        db.add_all([fresh, stale, missing])
+        db.flush()
+        for product in (fresh, stale, missing):
+            db.add(Rule(product_id=product.id, min_age=18, max_age=70, job_class_limit=6, waiting_period_days=30))
+        db.commit()
+    finally:
+        db.close()
+
+    payload = _base_payload()
+    payload.update({"age": 30, "life_stage": "single", "budget_ratio": 0.08})
+    response = client.post("/api/recommend", json=payload)
+    assert response.status_code == 200, response.text
+    packages = response.json()["packages"]
+    assert packages, "核心三险齐全时应形成方案"
+    items = {}
+    for pkg in packages:
+        for p in pkg["products"]:
+            items.setdefault(p["name"], p)
+    assert items["新鲜医疗Smoke"]["data_stale"] is False
+    assert items["新鲜医疗Smoke"]["last_verified_at"] is not None
+    assert items["陈旧意外Smoke"]["data_stale"] is True
+    assert items["未复核寿险Smoke"]["data_stale"] is True
+    assert items["未复核寿险Smoke"]["last_verified_at"] is None
+
+
 def test_stage3_scoring_budget_and_ai_invariants():
     assert _type_weights("医疗险")["coverage"] != _type_weights("定期寿险")["coverage"]
     assert abs(sum(DEFAULT_TYPE_WEIGHTS["医疗险"].values()) - 1.0) < 0.0001

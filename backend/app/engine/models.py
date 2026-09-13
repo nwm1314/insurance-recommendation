@@ -37,6 +37,9 @@ class ScoredProduct:
     dual_source_verified: bool = False
     third_party_review_url: str | None = None
     third_party_review_title: str | None = None
+    # 数据新鲜度标注（DATA-001，仅展示不参与评分）
+    last_verified_at: str | None = None
+    data_stale: bool = False
     layer: str = "core"        # basic / core / supplement
     score: float = 0.0
     score_detail: dict[str, float] = field(default_factory=dict)

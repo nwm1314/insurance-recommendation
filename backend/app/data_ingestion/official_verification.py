@@ -104,6 +104,8 @@ def verify_product_official(db: Session, product: Product) -> str:
             product.official_verification_status = VERIFIED
             product.official_verification_url = adapter["listing_url"]
             product.official_verified_at = datetime.utcnow()
+            # DATA-001：官网验证确认在售同样刷新复核时间戳
+            product.last_verified_at = utc_now()
         else:
             product.official_verification_status = NOT_FOUND
     except Exception as exc:

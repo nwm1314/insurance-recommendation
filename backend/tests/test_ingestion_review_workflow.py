@@ -584,6 +584,7 @@ def test_approve_publishes_recommendable_and_provenance(client, admin_headers):
         product = db.query(Product).filter(Product.id == body["product_id"]).first()
         assert product.status == 1
         assert product.premium_min == 500
+        assert product.last_verified_at is not None, "发布成功必须刷新复核时间戳（DATA-001）"
         rule = db.query(Rule).filter(Rule.product_id == product.id).first()
         assert rule is not None and rule.waiting_period_days == 30
         assert db.query(Benefit).filter(Benefit.product_id == product.id).count() == 1

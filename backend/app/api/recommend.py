@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends
@@ -6,7 +7,7 @@ from sqlalchemy.orm import Session
 from backend.app.database import get_db
 from backend.app.dependencies.auth import get_optional_current_user
 from backend.app.models.auth import User
-from backend.app.config import safe_llm_base_url
+from backend.app.config import safe_llm_base_url, settings
 from backend.app.schemas.user_profile import UserProfileRequest
 from backend.app.engine.models import UserProfile, ScoredProduct
 from backend.app.engine.rule_engine import filter_candidate_pool_with_profile, get_allowed_types, get_type_budget_limits
@@ -17,6 +18,7 @@ from backend.app.engine.ai_engine import ai_rerank_sync
 from backend.app.engine.fallback import get_fallback_narrative
 from backend.app.engine.health import evaluate_health_match
 from backend.app.services.auth_service import save_recommendation_record
+from backend.app.time import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +36,23 @@ def _source_type(product) -> str:
     if official and (urlparse(url).netloc or "") == (urlparse(official).netloc or ""):
         return "official"
     return "aggregator"
+
+
+def _product_freshness(product) -> tuple[str | None, bool]:
+    """DATA-001：返回 (last_verified_at ISO 字符串或 None, data_stale)。
+
+    复核时间缺失或早于 data_stale_days 天即视为过期，仅作展示标注。
+    """
+    verified_at = getattr(product, "last_verified_at", None)
+    if verified_at is None:
+        return None, True
+    if isinstance(verified_at, str):
+        try:
+            verified_at = datetime.fromisoformat(verified_at)
+        except ValueError:
+            return None, True
+    stale = (utc_now() - verified_at).days > settings.data_stale_days
+    return verified_at.isoformat(), stale
 
 
 def _run_rule_engine(db: Session, user: UserProfile) -> dict:
@@ -61,6 +80,7 @@ def _run_rule_engine(db: Session, user: UserProfile) -> dict:
         suggested_si = si_map.get(product.type, 500000)
         detail = score_product(product, rule, benefits, suggested_si, user.preferred_companies)
         risk_warnings = _check_health_warnings(user, rule, product)
+        last_verified_at, data_stale = _product_freshness(product)
         scored.append({
             "product_id": product.id,
             "name": product.name,
@@ -76,6 +96,8 @@ def _run_rule_engine(db: Session, user: UserProfile) -> dict:
             "dual_source_verified": bool(product.dual_source_verified),
             "third_party_review_url": product.third_party_review_url or None,
             "third_party_review_title": product.third_party_review_title or None,
+            "last_verified_at": last_verified_at,
+            "data_stale": data_stale,
             "score": detail["total"],
             "score_detail": {k: v for k, v in detail.items() if k != "total"},
             "risk_warnings": risk_warnings,
@@ -226,7 +248,6 @@ def recommend(
     # AI mode: rank candidates within the rule-engine whitelist and compose an
     # AI-pick package. Hard rules already filtered the pool; budget is enforced
     # again when materializing the AI selection.
-    from backend.app.config import settings
     if not settings.llm_api_key:
         logger.warning(
             "AI mode degraded: LLM_API_KEY is not configured (model=%s, base_url=%s)",
@@ -324,6 +345,8 @@ def _build_response(user: UserProfile, result: dict, engine_mode: str = "rule") 
                         "dual_source_verified": sp.dual_source_verified,
                         "third_party_review_url": sp.third_party_review_url,
                         "third_party_review_title": sp.third_party_review_title,
+                        "last_verified_at": sp.last_verified_at,
+                        "data_stale": sp.data_stale,
                         "score": sp.score, "score_detail": sp.score_detail,
                         "risk_warnings": sp.risk_warnings,
                         "recommendation_reasons": sp.recommendation_reasons,

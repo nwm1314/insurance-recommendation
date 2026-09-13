@@ -166,6 +166,10 @@ class Settings(BaseSettings):
     # only and never gate availability.
     official_verification_enabled: bool = True
 
+    # DATA-001：产品数据复核时间超过该天数时，推荐结果标注 data_stale
+    # （仅展示，不参与评分）。
+    data_stale_days: int = 90
+
     @field_validator("app_env")
     @classmethod
     def validate_app_env(cls, value: str) -> str:

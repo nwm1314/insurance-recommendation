@@ -42,6 +42,10 @@ class Product(Base):
     third_party_review_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     third_party_review_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
+    # ---- 数据新鲜度（DATA-001） ----
+    # 最近一次发布/官网验证确认时间；推荐响应据此标注 data_stale（仅展示不参与评分）
+    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
