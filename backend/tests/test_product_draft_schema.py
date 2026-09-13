@@ -115,3 +115,20 @@ def test_health_requirements_none_and_explicit_empty():
     normalized, _ = normalize_and_validate_product(_base(health_requirements={"exclude": [], "caution": []}))
     assert normalized["health_requirements"] == {"exclude": [], "caution": []}
     assert normalized["health_requirements_unstructured"] is False
+
+
+# ------------------------------------------------------------ INS-003
+
+def test_sum_insured_yuan_misreport_normalized_to_wan():
+    """按"元"误报的保额（>10000 万）自动 ÷10000 并打标。"""
+    normalized, _ = normalize_and_validate_product(_base(sum_insured_min=2000000, sum_insured_max=3000000))
+    assert normalized["sum_insured_min"] == 200
+    assert normalized["sum_insured_max"] == 300
+    assert normalized["sum_insured_unit_normalized"] is True
+
+
+def test_sum_insured_wan_values_untouched():
+    normalized, _ = normalize_and_validate_product(_base(sum_insured_min=5, sum_insured_max=300))
+    assert normalized["sum_insured_min"] == 5
+    assert normalized["sum_insured_max"] == 300
+    assert normalized["sum_insured_unit_normalized"] is False

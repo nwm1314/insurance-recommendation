@@ -56,6 +56,7 @@ class ProductDraftSchema(BaseModel):
     premium_max: float | None = Field(default=None, ge=0)
     sum_insured_min: float | None = Field(default=None, ge=0)
     sum_insured_max: float | None = Field(default=None, ge=0)
+    sum_insured_unit_normalized: bool = False
     coverage_period: str = ""
     payment_period: str = ""
     source_url: str | None = None
@@ -107,6 +108,20 @@ class ProductDraftSchema(BaseModel):
             self.min_age = None
             self.max_age = None
             self.job_class_limit = None
+        return self
+
+    @model_validator(mode="after")
+    def normalize_sum_insured_units(self):
+        # 存储规范：sum_insured_* 单位=万，premium_*/deductible 单位=元（INS-003）。
+        # 零售险种保额不可能超过 10 亿（10000 万），更大的数值视为按"元"误报，
+        # 自动 ÷10000 并打标（落入 draft_data 供人工复核）。
+        fixed = False
+        for field_name in ("sum_insured_min", "sum_insured_max"):
+            value = getattr(self, field_name)
+            if value is not None and value > 10000:
+                setattr(self, field_name, value / 10000)
+                fixed = True
+        self.sum_insured_unit_normalized = fixed
         return self
 
     @model_validator(mode="after")
