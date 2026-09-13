@@ -89,3 +89,29 @@ def test_premium_and_deductible_none_preserved():
     assert normalized["premium_min"] is None
     assert normalized["premium_max"] is None
     assert normalized["deductible"] == 10000
+
+
+# ------------------------------------------------------------ INS-002
+
+def test_health_requirements_dict_kept_and_cleaned():
+    normalized, _ = normalize_and_validate_product(_base(
+        health_requirements={"exclude": ["高血压", 3], "caution": [" 甲状腺结节 "], "unknown_key": ["x"]}
+    ))
+    assert normalized["health_requirements"] == {"exclude": ["高血压", "3"], "caution": ["甲状腺结节"]}
+    assert normalized["health_requirements_unstructured"] is False
+
+
+def test_health_requirements_list_flagged_unstructured():
+    normalized, _ = normalize_and_validate_product(_base(health_requirements=["甲状腺结节", "高血压"]))
+    assert normalized["health_requirements"] == ["甲状腺结节", "高血压"]
+    assert normalized["health_requirements_unstructured"] is True
+
+
+def test_health_requirements_none_and_explicit_empty():
+    normalized, _ = normalize_and_validate_product(_base(health_requirements=None))
+    assert normalized["health_requirements"] is None
+    assert normalized["health_requirements_unstructured"] is False
+
+    normalized, _ = normalize_and_validate_product(_base(health_requirements={"exclude": [], "caution": []}))
+    assert normalized["health_requirements"] == {"exclude": [], "caution": []}
+    assert normalized["health_requirements_unstructured"] is False

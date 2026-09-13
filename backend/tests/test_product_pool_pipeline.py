@@ -114,7 +114,7 @@ def _draft_data(**overrides) -> dict:
         "max_age": 60,
         "job_class_limit": 1,
         "waiting_period_days": 30,
-        "health_requirements": [],
+        "health_requirements": {"exclude": [], "caution": []},
     }
     data.update(overrides)
     return data
@@ -283,6 +283,38 @@ def test_auto_publish_blocked_by_missing_rule_fields_and_unknown_health():
             should, got = evaluate_auto_publish(draft, "llm")
             assert (should, got) == (False, reason), f"case {i}: unexpected reason {got}"
         assert db.query(Product).filter(Product.status == 1).count() == 0
+    finally:
+        db.close()
+
+
+def test_auto_publish_blocked_for_unstructured_health_requirements():
+    """INS-002：list 形态的 health_requirements 不得自动发布（防静默当作 caution）。"""
+    from backend.app.data_ingestion.validators.product_schema import normalize_and_validate_product
+
+    db = SessionLocal()
+    try:
+        raw = _raw_document(db, "https://www.huize.com/apps/cps/index/product/detail?prodId=31")
+        # 走真实 LLM 归一化路径：schema 对 list 打 unstructured 标记
+        normalized, confidence = normalize_and_validate_product(
+            _draft_data(health_requirements=["甲状腺结节", "高血压"])
+        )
+        assert normalized["health_requirements_unstructured"] is True
+        task = create_extraction_review(db, raw, normalized, confidence=confidence, extractor="llm")
+        assert task.status == "pending"
+        draft = db.query(ProductDraft).filter(ProductDraft.id == task.product_draft_id).first()
+        should, reason = evaluate_auto_publish(draft, "llm")
+        assert (should, reason) == (False, "health_requirements_unstructured")
+    finally:
+        db.close()
+
+
+def test_auto_publish_allows_explicit_empty_health_structure():
+    """INS-002：显式 {"exclude": [], "caution": []} 是"页面无健康要求"的确认形态，可自动发布。"""
+    db = SessionLocal()
+    try:
+        raw = _raw_document(db, "https://www.huize.com/apps/cps/index/product/detail?prodId=32")
+        task = create_extraction_review(db, raw, _draft_data(), confidence=0.9, extractor="llm")
+        assert task.status == "approved"
     finally:
         db.close()
 

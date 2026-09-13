@@ -29,7 +29,7 @@ EXTRACT_PROMPT = """你是一个保险产品信息提取器。从以下网页文
   "has_insured_waiver": null,
   "has_insurer_waiver": null,
   "health_disclosure_count": null,
-  "health_requirements": null,
+  "health_requirements": {"exclude": [], "caution": []},
   "benefits": [
     {
       "benefit_type": "basic",
@@ -43,6 +43,7 @@ EXTRACT_PROMPT = """你是一个保险产品信息提取器。从以下网页文
 规则：
 - 无法从页面确认的字段一律输出 null（禁止填 0、禁止猜测默认值）；保费/保额数字必须是页面原文数字，不得推算
 - 允许输出 null 的字段：min_age, max_age, job_class_limit, waiting_period_days, has_insured_waiver, has_insurer_waiver, health_disclosure_count, health_requirements, premium_min, premium_max, sum_insured_min, sum_insured_max, deductible, disease_count
+- health_requirements 必须是结构化对象：{"exclude": [...], "caution": [...]}。exclude=产品条款明确不可投保的健康异常；caution=需健康告知/核保关注的异常；元素用条款原文中的中文名词；页面未提及健康要求时输出 {"exclude": [], "caution": []}；无法判断时输出 null
 - type 必须严格匹配枚举值
 - benefits 数组从网页保障责任段落提取
 - 所有金额单位为"元"

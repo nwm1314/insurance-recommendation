@@ -85,7 +85,7 @@ def _draft_data(name="泰康全能保2026", company="泰康在线", type_="意�
         "coverage_period": "1年", "payment_period": "1年",
         "source_url": url,
         "min_age": 0, "max_age": 65, "job_class_limit": 1,
-        "waiting_period_days": 0, "health_requirements": [],
+        "waiting_period_days": 0, "health_requirements": {"exclude": [], "caution": []},
     }
 
 

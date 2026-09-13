@@ -84,6 +84,11 @@ def evaluate_auto_publish(draft: ProductDraft, extractor: str) -> tuple[bool, st
         return False, "missing_rule_fields"
     if data.get("health_requirements") is None:
         return False, "unknown_health_requirements"
+    # INS-002：schema 归一化时发现 health_requirements 是 list（LLM 未按
+    # exclude/caution 结构返回）则打标；list 会被引擎静默当作 caution，
+    # exclude 维度失效，故必须留人工确认。
+    if data.get("health_requirements_unstructured"):
+        return False, "health_requirements_unstructured"
     # 险种经 schema 归一化后总是合法枚举，但页面不是产品详情页时 LLM 可能
     # 硬凑；要求 URL 与发现模式一致由调度侧保证，这里只拦明显占位。
     if draft.matched_product_id is not None and not _is_exact_match(draft, data):

@@ -24,6 +24,30 @@ class BenefitDraft(BaseModel):
     payment_limit: str = ""
 
 
+def _normalize_health_requirements(value) -> tuple[Any, bool]:
+    """归一化健康要求，返回 (归一化结果, 是否未结构化)。
+
+    dict 仅保留 exclude/caution 两键、元素归一为字符串；list 不静默当作
+    caution（引擎对 list 只填 caution），原样保留并打 unstructured 标记
+    交发布闸拦截、留人工审核；None 表示页面无法判断，保持 None。
+    """
+    if value is None:
+        return None, False
+    if isinstance(value, dict):
+        cleaned: dict[str, list[str]] = {}
+        for key in ("exclude", "caution"):
+            items = value.get(key)
+            if isinstance(items, str):
+                items = [items]
+            if not isinstance(items, list):
+                items = []
+            cleaned[key] = [str(item).strip() for item in items if str(item).strip()]
+        return cleaned, False
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()], True
+    return [str(value).strip()], True
+
+
 class ProductDraftSchema(BaseModel):
     name: str = Field(min_length=1)
     company: str = Field(min_length=1)
@@ -51,7 +75,8 @@ class ProductDraftSchema(BaseModel):
     has_insured_waiver: bool | None = None
     has_insurer_waiver: bool | None = None
     health_disclosure_count: int | None = Field(default=None, ge=0)
-    health_requirements: list[Any] | dict | None = None
+    health_requirements: Any = None
+    health_requirements_unstructured: bool = False
     benefits: list[BenefitDraft] = Field(default_factory=list)
 
     @field_validator("type", mode="before")
@@ -82,6 +107,13 @@ class ProductDraftSchema(BaseModel):
             self.min_age = None
             self.max_age = None
             self.job_class_limit = None
+        return self
+
+    @model_validator(mode="after")
+    def normalize_health_requirements(self):
+        normalized, unstructured = _normalize_health_requirements(self.health_requirements)
+        self.health_requirements = normalized
+        self.health_requirements_unstructured = unstructured
         return self
 
 
