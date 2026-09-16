@@ -1,7 +1,48 @@
 from datetime import datetime
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
+from backend.app.config import settings
 from backend.app.database import Base
+
+
+class EncryptedJSON(TypeDecorator):
+    """OPS-002：应用层透明加解密的 JSON 列。
+
+    写入：配置了 record_encryption_key 时 Fernet 加密为密文字符串；密钥为
+    空则明文落库（显式降级）。读取：字符串按密文解密，dict 直接返回（兼容
+    未加密的历史数据/降级写入）。
+    """
+
+    impl = JSON
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        secret = settings.record_encryption_key
+        if not secret:
+            return value
+        from backend.app.services.crypto import encrypt_json
+
+        return encrypt_json(value, secret)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        if isinstance(value, dict):
+            return value
+        secret = settings.record_encryption_key
+        if not secret:
+            return value
+        from backend.app.services.crypto import decrypt_json
+
+        try:
+            return decrypt_json(value, secret)
+        except Exception:
+            # 密钥轮换/损坏的密文：抛错会打挂整个读路径，返回原始值并交由
+            # 上层按"不可解密记录"处理（与 fail-open 边界一致）。
+            return {"_decryption_failed": True}
 
 
 class User(Base):
@@ -96,8 +137,9 @@ class RecommendationRecord(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
-    profile: Mapped[dict] = mapped_column(JSON, nullable=False)
-    result: Mapped[dict] = mapped_column(JSON, nullable=False)
+    # OPS-002：profile/result 含健康描述等敏感信息，落库透明加密
+    profile: Mapped[dict] = mapped_column(EncryptedJSON, nullable=False)
+    result: Mapped[dict] = mapped_column(EncryptedJSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 

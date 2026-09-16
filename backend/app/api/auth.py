@@ -1,4 +1,6 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+import logging
+import redis as redis_lib
 from sqlalchemy.orm import Session
 from backend.app.database import get_db
 from backend.app.dependencies.auth import ACCESS_TOKEN_COOKIE, get_client_ip, get_current_user, require_permission
@@ -31,6 +33,53 @@ from backend.app.config import settings
 router = APIRouter(prefix="/api", tags=["auth"])
 
 REFRESH_TOKEN_COOKIE = "refresh_token"
+
+logger = logging.getLogger(__name__)
+
+# OPS-002：登录防爆破（Redis 计数，故障 fail-open）。失败按邮箱与 IP 双维
+# 计数；达到阈值返回 429，成功登录清零。
+LOGIN_FAIL_THRESHOLD = 5
+LOGIN_FAIL_TTL_SECONDS = 900  # 15 分钟
+
+
+def _get_redis_client():
+    try:
+        client = redis_lib.from_url(settings.redis_url, decode_responses=True)
+        client.ping()
+        return client
+    except Exception:
+        return None
+
+
+def _login_bruteforce_check(client, email: str, ip: str) -> bool:
+    """登录前检查失败计数；达到阈值返回 False（拒绝）。"""
+    for key in (f"login_fail:{email}", f"login_fail_ip:{ip}"):
+        try:
+            current = client.get(key)
+            if current is not None and int(current) >= LOGIN_FAIL_THRESHOLD:
+                return False
+        except Exception:
+            return True
+    return True
+
+
+def _record_login_failure(client, email: str, ip: str) -> None:
+    for key in (f"login_fail:{email}", f"login_fail_ip:{ip}"):
+        try:
+            value = client.incr(key)
+            if value == 1:
+                client.expire(key, LOGIN_FAIL_TTL_SECONDS)
+        except Exception as exc:
+            logger.warning("login failure counting skipped: %s", exc)
+            return
+
+
+def _clear_login_failures(client, email: str, ip: str) -> None:
+    try:
+        client.delete(f"login_fail:{email}")
+        client.delete(f"login_fail_ip:{ip}")
+    except Exception:
+        pass
 
 
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str):
@@ -89,9 +138,19 @@ def login(
     raw_request: Request,
     db: Session = Depends(get_db),
 ):
+    client_ip = get_client_ip(raw_request) or "unknown"
+    # OPS-002：防爆破——Redis 不可用时跳过（fail-open），不阻塞正常登录
+    redis_client = _get_redis_client()
+    if redis_client is not None and not _login_bruteforce_check(redis_client, request.email, client_ip):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="尝试过于频繁，请15分钟后再试")
+
     user = authenticate_user(db, request.email, request.password)
     if user is None:
+        if redis_client is not None:
+            _record_login_failure(redis_client, request.email, client_ip)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="邮箱或密码错误")
+    if redis_client is not None:
+        _clear_login_failures(redis_client, request.email, client_ip)
     access_token = create_access_token(user)
     refresh_token = create_refresh_token(db, user)
     _set_auth_cookies(response, access_token, refresh_token)

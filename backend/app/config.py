@@ -126,6 +126,14 @@ class Settings(BaseSettings):
     # AI-003：AI 精排候选池每险种取前 N 个（默认 5）
     ai_candidate_pool_size: int = 5
 
+    # OPS-002：推荐记录落库加密密钥（Fernet）。为空则明文落库并启动 warning
+    # （显式降级，不静默）。加密仅覆盖推荐记录，数据库文件/备份仍需按敏感
+    # 数据处理。
+    record_encryption_key: str = ""
+    # OPS-002：健康信息保留天数预留（0=永久）。本期不实现清理任务，仅配置
+    # 与文档。
+    record_retention_days: int = 0
+
     llm_api_key: str = ""
     llm_base_url: str = "https://api.deepseek.com/v1"
     llm_model: str = "deepseek-v4-flash"

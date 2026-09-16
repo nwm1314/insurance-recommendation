@@ -30,6 +30,13 @@ async def lifespan(app: FastAPI):
         settings.llm_model,
         safe_llm_base_url(settings.llm_base_url),
     )
+    # OPS-002：未配置加密密钥时推荐记录明文落库——显式降级，不静默
+    if not settings.record_encryption_key:
+        logger.warning(
+            "RECORD_ENCRYPTION_KEY is not set: recommendation records (profile/result, "
+            "including health disclosures) will be stored in PLAINTEXT. Set the key in .env "
+            "before exposing the system to real users."
+        )
     validate_scoring_weights_on_startup(logger)
     init_db()
     db = SessionLocal()
