@@ -70,9 +70,11 @@ def approve_review_task(db: Session, task: ProductReviewTask, reviewer_id: int, 
             update_product(db, target_product_id, {"status": 0}, commit=False)
         else:
             payload = draft_data_to_product_payload(draft.draft_data)
-            # 发布最新审核数据即重新上架：目标产品可能此前被停售/下架，
-            # 保持 status=0 会让真实数据永远进不了推荐池。
-            payload["status"] = 1
+            # DATA-003：更新既有产品时不改动 status（无论当前 0/1）——重新
+            # 上架是显式动作，走 admin PUT /api/products/{id}。与 INS-004 的
+            # 联动语义：404 自动下架后，同一页面恢复 200 并发布新草稿，
+            # status 维持 0，这是预期行为（恢复在售需人工确认），防止已下架
+            # 产品被数据更新悄悄带回推荐池。
             update_product(db, target_product_id, payload, commit=False)
     else:
         payload = draft_data_to_product_payload(draft.draft_data)

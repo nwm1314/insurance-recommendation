@@ -738,6 +738,80 @@ def test_rollback_restores_published_snapshot(client, admin_headers):
         db.close()
 
 
+def test_approve_does_not_reactivate_deactivated_product(client, admin_headers):
+    """DATA-003：手工下架的产品收到新数据草稿并 approve——status 保持 0，数据已更新。"""
+    created = client.post("/api/products", headers=admin_headers, json={
+        "name": "已下架产品", "company": "下架公司", "type": "医疗险",
+        "premium_min": 500, "premium_max": 800, "sum_insured_max": 300,
+        "rule": {"min_age": 0, "max_age": 60, "job_class_limit": 6, "waiting_period_days": 30},
+    })
+    assert created.status_code == 201, created.text
+    existing_id = created.json()["id"]
+    deactivated = client.put(f"/api/products/{existing_id}", headers=admin_headers, json={"status": 0})
+    assert deactivated.status_code == 200, deactivated.text
+
+    page_id, _job_id = _create_page_and_job(client, admin_headers)
+    task_id = _manual_extraction(client, admin_headers, page_id, {
+        "name": "已下架产品", "company": "下架公司", "type": "医疗险",
+        "premium_min": 900,
+        "min_age": 0, "max_age": 60, "job_class_limit": 6, "waiting_period_days": 45,
+    })
+
+    approved = client.post(f"/api/admin/ingestion/review-tasks/{task_id}/approve", headers=admin_headers, json={"note": "数据更新"})
+    assert approved.status_code == 200, approved.text
+    db = SessionLocal()
+    try:
+        product = db.query(Product).filter(Product.id == existing_id).first()
+        assert product.status == 0, "approve 更新不得复活已下架产品（DATA-003）"
+        assert product.premium_min == 900, "数据本身应更新"
+    finally:
+        db.close()
+
+
+def test_admin_update_creates_version_and_rollback_restores(client, admin_headers):
+    """DATA-003：管理员编辑产生版本快照（无草稿、记录编辑人），可回滚还原。"""
+    created = client.post("/api/products", headers=admin_headers, json={
+        "name": "版本链产品", "company": "版本公司", "type": "医疗险",
+        "premium_min": 500, "premium_max": 800, "sum_insured_max": 300,
+        "rule": {"min_age": 0, "max_age": 60, "job_class_limit": 6, "waiting_period_days": 30},
+    })
+    assert created.status_code == 201, created.text
+    product_id = created.json()["id"]
+
+    updated = client.put(f"/api/products/{product_id}", headers=admin_headers, json={"premium_min": 9999})
+    assert updated.status_code == 200, updated.text
+
+    db = SessionLocal()
+    try:
+        from backend.app.models.data_ingestion import ProductVersion
+        versions = (
+            db.query(ProductVersion)
+            .filter(ProductVersion.product_id == product_id)
+            .order_by(ProductVersion.id)
+            .all()
+        )
+        # 直连创建不产生版本（版本链仅覆盖审核发布与编辑前快照），
+        # 管理员编辑产生唯一一条编辑前快照
+        assert len(versions) == 1, "管理员编辑必须产生一条编辑前快照"
+        admin_version = versions[0]
+        assert admin_version.product_draft_id is None
+        assert admin_version.published_by is not None
+        assert admin_version.version_data["premium_min"] == 500, "快照应为编辑前状态"
+        assert admin_version.version_data["rule"]["max_age"] == 60, "快照应含编辑前的规则字段"
+        version_id = admin_version.id
+    finally:
+        db.close()
+
+    rolled_back = client.post(f"/api/admin/ingestion/versions/{version_id}/rollback", headers=admin_headers)
+    assert rolled_back.status_code == 200, rolled_back.text
+    db = SessionLocal()
+    try:
+        product = db.query(Product).filter(Product.id == product_id).first()
+        assert product.premium_min == 500, "回滚管理员版本必须还原编辑前数据"
+    finally:
+        db.close()
+
+
 def test_approve_is_atomic_single_transaction(client, admin_headers, monkeypatch):
     """Publish commits exactly once; a mid-transaction failure leaves no rows."""
     from backend.app.data_ingestion.review import approve_review_task

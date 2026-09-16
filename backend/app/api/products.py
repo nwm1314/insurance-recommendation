@@ -191,6 +191,52 @@ def api_create_product(
     return _serialize_product(product)
 
 
+def _version_data_from_product(product, rule, benefits) -> dict:
+    """把当前 product+rule+benefits 序列化为草稿数据形态的版本快照（DATA-003）。
+
+    采用 draft_data 键位（rule/benefits 子键），保证 rollback_product_version
+    可直接用 draft_data_to_product_payload 还原。
+    """
+    version_data: dict = {
+        "name": product.name,
+        "company": product.company,
+        "type": product.type,
+        "premium_min": product.premium_min,
+        "premium_max": product.premium_max,
+        "sum_insured_min": product.sum_insured_min,
+        "sum_insured_max": product.sum_insured_max,
+        "coverage_period": product.coverage_period,
+        "payment_period": product.payment_period,
+        "source_url": product.source_url,
+        "deductible": product.deductible,
+        "disease_count": product.disease_count,
+        "mild_disease_count": product.mild_disease_count,
+        "moderate_disease_count": product.moderate_disease_count,
+        "has_mild_coverage": product.has_mild_coverage,
+        "has_moderate_coverage": product.has_moderate_coverage,
+        "has_multi_claim": product.has_multi_claim,
+        "company_tier": product.company_tier,
+    }
+    version_data = {k: v for k, v in version_data.items() if v is not None}
+    if rule is not None:
+        version_data["rule"] = {
+            key: getattr(rule, key) for key in (
+                "min_age", "max_age", "job_class_limit", "waiting_period_days",
+                "has_insured_waiver", "has_insurer_waiver",
+                "health_disclosure_count", "health_requirements",
+            ) if getattr(rule, key) is not None
+        }
+    version_data["benefits"] = [
+        {
+            key: getattr(b, key) for key in
+            ("benefit_type", "benefit_name", "benefit_amount", "payment_limit", "desc")
+            if getattr(b, key) is not None
+        }
+        for b in benefits
+    ]
+    return version_data
+
+
 @router.put("/products/{product_id}")
 def api_update_product(
     product_id: int,
@@ -200,14 +246,33 @@ def api_update_product(
     db: Session = Depends(get_db),
 ):
     data = {k: v for k, v in payload.model_dump().items() if v is not None}
-    product = update_product(db, product_id, data)
-    if not product:
+    existing = get_product_with_details(db, product_id)
+    if not existing:
         raise HTTPException(status_code=404, detail="产品不存在")
+    # DATA-003：管理员编辑入版本链——更新前把当前 product+rule+benefits 快照
+    # 写一条 ProductVersion，与更新同一事务提交，保证可回滚。
+    from backend.app.models.data_ingestion import ProductVersion
+
+    version_data = _version_data_from_product(existing["product"], existing["rule"], existing["benefits"])
+    version = ProductVersion(
+        product_id=product_id,
+        product_draft_id=None,
+        version_data=version_data,
+        published_by=user.id,
+    )
+    product = update_product(db, product_id, data, commit=False)
+    if not product:
+        db.rollback()
+        raise HTTPException(status_code=404, detail="产品不存在")
+    db.add(version)
+    db.flush()
     write_audit_log(
         db, user, "product.update", "product", str(product_id),
-        detail={"updated_fields": sorted(data.keys())},
+        detail={"updated_fields": sorted(data.keys()), "version_id": version.id},
         ip_address=get_client_ip(request),
     )
+    db.commit()
+    db.refresh(product)
     return _serialize_product(product)
 
 

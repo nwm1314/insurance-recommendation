@@ -102,7 +102,8 @@ class ProductVersion(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     product_id: Mapped[int] = mapped_column(Integer, ForeignKey("products.id"), nullable=False)
-    product_draft_id: Mapped[int] = mapped_column(Integer, ForeignKey("product_drafts.id"), nullable=False)
+    # DATA-003：管理员编辑产生的版本没有草稿，允许为空
+    product_draft_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("product_drafts.id"), nullable=True)
     version_data: Mapped[dict] = mapped_column(JSON, nullable=False)
     published_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     published_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

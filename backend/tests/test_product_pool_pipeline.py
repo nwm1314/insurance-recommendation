@@ -337,12 +337,14 @@ def test_auto_publish_off_shelf_only_with_exact_match():
         db.refresh(product)
         assert product.status == 0
 
-        # 再次发布（非停售）→ 必须重新上架，否则真实数据永远进不了推荐池
+        # 再次发布（非停售）→ DATA-003 语义：更新数据但不改动 status——
+        # 重新上架是显式动作，走 admin PUT /api/products/{id}
         raw3 = _raw_document(db, "https://www.huize.com/apps/cps/index/product/detail?prodId=12")
-        task3 = create_extraction_review(db, raw3, _draft_data(), confidence=0.85, extractor="llm")
+        task3 = create_extraction_review(db, raw3, _draft_data(premium_min=310), confidence=0.85, extractor="llm")
         assert task3.status == "approved"
         db.refresh(product)
-        assert product.status == 1
+        assert product.status == 0, "发布更新不得复活已下架产品"
+        assert product.premium_min == 310, "数据本身应更新"
 
         # 无匹配的停售草稿 → 人工审核
         raw4 = _raw_document(db, "https://www.huize.com/apps/cps/index/product/detail?prodId=13")

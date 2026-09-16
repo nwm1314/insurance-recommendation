@@ -15,7 +15,7 @@ from backend.app.database import Base, verify_schema_integrity
 from backend.app.models.product import Product
 import backend.app.migrations as migrations
 
-HEAD = "20260914_0001"
+HEAD = "20260914_0002"
 MODEL_TABLE_COUNT = 23
 
 
