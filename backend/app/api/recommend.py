@@ -11,6 +11,7 @@ from backend.app.database import get_db
 from backend.app.dependencies.auth import get_client_ip, get_optional_current_user
 from backend.app.models.auth import User
 from backend.app.config import safe_llm_base_url, settings
+from backend.app.schemas.recommendation import RecommendationResponse
 from backend.app.schemas.user_profile import UserProfileRequest
 from backend.app.engine.models import UserProfile, ScoredProduct
 from backend.app.engine.rule_engine import filter_candidate_pool_with_profile, get_allowed_types, get_type_budget_limits
@@ -300,7 +301,7 @@ def _check_and_consume_ai_quota(client, identity: str) -> tuple[bool, int]:
     return used <= settings.ai_daily_limit_per_user, used
 
 
-@router.post("/recommend")
+@router.post("/recommend", response_model=RecommendationResponse)
 def recommend(
     request: UserProfileRequest,
     raw_request: Request,

@@ -1,5 +1,11 @@
+"""POST /api/recommend 响应模型（OPS-004）。
+
+字段清单逐一核对 `_build_response`（backend/app/api/recommend.py）与前端
+消费契约（frontend/src/types/index.ts）。response_model 会剥离未声明字段，
+新增响应键时必须同步此处。
+"""
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ScoreDetail(BaseModel):
@@ -20,8 +26,21 @@ class ProductItem(BaseModel):
     type: str
     layer: str = "core"
     premium: float
+    premium_max: Optional[float] = None
+    deductible: Optional[float] = None
     sum_insured: float
+    # REC-002：价格口径说明与是否披露报价
+    premium_basis_note: Optional[str] = None
+    premium_known: bool = True
     source_url: str = ""
+    # official=承保公司官网，aggregator=聚合站产品详情页
+    source_type: str = ""
+    official_verified: bool = False
+    dual_source_verified: bool = False
+    third_party_review_url: Optional[str] = None
+    third_party_review_title: Optional[str] = None
+    last_verified_at: Optional[str] = None
+    data_stale: bool = False
     score: float
     score_detail: ScoreDetail
     risk_warnings: list[dict] = []
@@ -49,17 +68,30 @@ class SumInsuredAdviceResponse(BaseModel):
     critical_illness: float
     life: float
     cancer: float = 0
+    # REC-001：无社保身份的医疗险建议提示（有社保/未填时为 null）
+    medical_social_note: Optional[str] = None
+
+
+class PackageCoverageGap(BaseModel):
+    type: str
+    suggested: float
+    covered: float
+    gap: float
+    note: Optional[str] = None
 
 
 class ComboPackageResponse(BaseModel):
     tag: str
     tag_label: str
     total_premium: float
+    total_premium_max: Optional[float] = None
     budget_ratio: float
     budget_utilization: float = 0
     completeness_score: float = 0
     coverage_gap_notes: list[str] = []
     products: list[ProductItem]
+    # REC-004：按 required 险种的保额缺口（单位元）
+    coverage_gaps: list[PackageCoverageGap] = []
 
 
 class NotRecommendedSummary(BaseModel):
@@ -93,8 +125,16 @@ class RecommendationResponse(BaseModel):
     llm_narrative: Optional[str] = None
     ai_explanation: Optional[AIExplanationResponse] = None
     engine_mode: str = "rule"
+    # DATA-002：复现元数据（engine/rule/scoring 版本与权重 hash）
+    meta: dict = Field(default_factory=dict)
     hard_rule_summary: list[str] = []
     coverage_gap_summary: list[str] = []
     not_recommended_summary: list[NotRecommendedSummary] = []
     not_recommended_details: list[NotRecommendedDetail] = []
+    # TASK-029：画像评估（历史记录可能缺省）
+    profile_assessment: Optional[dict] = None
+    # REC-001：按险种的保额缺口 {"险种": {"suggested","existing","gap"}}（元）
+    coverage_gaps: dict = Field(default_factory=dict)
+    # AI-002：缓存命中标注（仅 AI 模式成功路径出现）
+    ai_from_cache: Optional[bool] = None
     disclaimer: str = "本方案由算法生成，仅供参考，最终承保以保险公司官方条款为准"
