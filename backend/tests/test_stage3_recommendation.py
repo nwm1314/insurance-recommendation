@@ -455,6 +455,42 @@ def test_combo_coverage_gaps_note_when_sum_insured_undisclosed():
     assert gaps[0]["note"] == "保额未披露，缺口按 0 已覆盖估算"
 
 
+def test_rec005_no_dead_config_and_pref_bonus_neutral():
+    """REC-005：yaml 无死配置键；pref_bonus 死代码删除后公司偏好不改变
+    同输入评分（历史行为就是被覆盖的死代码）。"""
+    from backend.app.config import BUDGET_RULES, SCORING_WEIGHTS
+    import backend.app.engine.scoring as scoring
+
+    # budget_rules.yaml 中按 ratio 分层的死配置与 income_tiers[].budget_ratio 已删
+    assert "budget_tiers" not in BUDGET_RULES
+    for tier in BUDGET_RULES.get("income_tiers", []):
+        assert "budget_ratio" not in tier
+    # absolute_budget_tiers 是险种集合的唯一真相
+    assert BUDGET_RULES.get("absolute_budget_tiers")
+
+    # scoring_weights.yaml 的 company_preference_bonus 键不再被评分引用
+    class _P:
+        company = "中国平安"
+        type = "医疗险"
+        disease_count = None
+        has_mild_coverage = False
+        has_moderate_coverage = False
+        has_multi_claim = False
+        company_tier = 2
+        sum_insured_max = 300
+
+    class _R:
+        health_disclosure_count = 3
+        job_class_limit = 6
+        waiting_period_days = 30
+        has_insured_waiver = True
+        has_insurer_waiver = False
+
+    base = scoring.score_product(_P(), _R(), [], 500000, None)
+    with_pref = scoring.score_product(_P(), _R(), [], 500000, ["中国平安"])
+    assert base == with_pref, "公司偏好不得改变 score_product 结果（唯一生效点在 combo_builder）"
+
+
 def test_price_scoring_rank_percentile_beats_min_max_distortion():
     """REC-002：排名百分位——[100, 200, 100000] 价格分单调递减，
     中间产品得 0.5 权重（min-max 旧逻辑会给它接近满分，这是要防的回归）。"""

@@ -242,7 +242,11 @@ def _build_single_combo(
                 base = p.get("score", 0)
                 tier = p.get("company_tier", 2)
                 bonus = tier_prefs.get(tier, 1.0)
-                # Extra bump for explicitly preferred companies
+                # Extra bump for explicitly preferred companies.
+                # 注意：这是公司偏好在评分链路中唯一实际生效的点——
+                # score_product 里历史上的 pref_bonus 进 total 后被
+                # apply_price_scoring 的 sum(score_detail) 覆盖，从未生效
+                # （REC-005 已删除该死代码）。
                 if preferred and p.get("company", "") in preferred:
                     bonus += 0.12
                 return base * bonus
@@ -341,12 +345,9 @@ def _build_single_combo(
             not_recommended_reasons=best.get("not_recommended_reasons") or [],
         ))
 
-    ratio = total / budget.annual_income if budget.annual_income > 0 else 0
-    covered_types = {p.type for p in scored_list}
+    # required 集合只算一次；ratio/completeness/utilization 的最终口径在
+    # 加补与置换之后统一重算（REC-005：删除重复的首次计算）
     required_types = _required_types_for_package(allowed_types, tag)
-    missing_types = [t for t in required_types if t not in covered_types]
-    completeness = 1.0 if not required_types else (len(required_types) - len(missing_types)) / len(required_types)
-    budget_utilization = total / max(max_spend, 1)
 
     # Premium: add second-best products within remaining budget for extra coverage
     if tag == "premium":
@@ -396,16 +397,12 @@ def _build_single_combo(
                 not_recommended_reasons=extra.get("not_recommended_reasons") or [],
             ))
 
-    ratio = total / budget.annual_income if budget.annual_income > 0 else 0
-    covered_types = {p.type for p in scored_list}
-    missing_types = [t for t in required_types if t not in covered_types]
-    completeness = 1.0 if not required_types else (len(required_types) - len(missing_types)) / len(required_types)
-    budget_utilization = total / max(max_spend, 1)
-
     # REC-004 一次置换 pass（star/premium 套餐，至多一轮）：存在缺失的
     # required 类型时，用该类型最便宜的合格产品替换已选中分值最低且非
     # 医疗/意外的产品；completeness 提升才采纳。budget 套餐保持极致性
     # 价比语义，不做置换。
+    covered_types = {p.type for p in scored_list}
+    missing_types = [t for t in required_types if t not in covered_types]
     if tag in ("star", "premium") and missing_types:
         total, total_max, unknown_max, _swapped = _swap_in_missing_required(
             scored_list, sorted_pools, picked_ids, required_types, missing_types,

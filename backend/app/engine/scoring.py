@@ -94,7 +94,13 @@ def score_product(
     suggested_sum_insured: float,
     preferred_companies: list[str] | None = None,
 ) -> dict:
-    """Score a single product with insurance-type-specific 8-dimension weights."""
+    """Score a single product with insurance-type-specific 8-dimension weights.
+
+    preferred_companies 参数保留以兼容调用方，但当前不参与评分——历史上
+    的 pref_bonus 进 total 后会被 apply_price_scoring 的 sum(score_detail)
+    覆盖，从未生效（REC-005 已删除）；公司偏好的唯一实际生效点是
+    combo_builder.tier_adjusted_score 的 +0.12 偏好加成。
+    """
     weights = _type_weights(product.type)
 
     coverage = _score_coverage(product, benefits, weights)
@@ -114,11 +120,6 @@ def score_product(
 
     service = _score_service(product, benefits, weights)
 
-    # Company preference bonus: +5% weight bonus for preferred companies
-    pref_bonus = 0.0
-    if preferred_companies and product.company in preferred_companies:
-        pref_bonus = WEIGHTS.get("company_preference_bonus", 0.05) * 100
-
     detail = {
         "coverage": coverage,
         "price": price,
@@ -129,8 +130,7 @@ def score_product(
         "brand": brand,
         "service": service,
     }
-    total = sum(detail.values()) + pref_bonus
-    detail["total"] = total
+    detail["total"] = sum(detail.values())
     return detail
 
 
