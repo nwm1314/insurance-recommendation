@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["recommend"])
 
+# REC-002：价格口径说明（常量，前端 tooltip 展示）
+PREMIUM_BASIS_NOTE = "价格为报价区间下限，实际以核保为准；不同产品报价条件（年龄/保额/缴费期）可能不同"
+
 
 def _source_type(product) -> str:
     """official = 承保公司官网域名；aggregator = 聚合站产品详情页。"""
@@ -88,6 +91,8 @@ def _run_rule_engine(db: Session, user: UserProfile) -> dict:
             "company": product.company,
             "type": product.type,
             "premium": product.premium_min or 0,
+            # REC-002：premium_min 是否披露——未知保费拿中性价格分、不参与排名
+            "premium_known": product.premium_min is not None,
             "premium_max": product.premium_max or None,
             "deductible": getattr(product, "deductible", None),
             "sum_insured": product.sum_insured_max or 0,
@@ -390,6 +395,9 @@ def _build_response(user: UserProfile, result: dict, engine_mode: str = "rule") 
                         "id": sp.product_id, "name": sp.name, "company": sp.company,
                         "type": sp.type, "layer": sp.layer,
                         "premium": sp.premium, "premium_max": sp.premium_max, "deductible": sp.deductible, "sum_insured": sp.sum_insured,
+                        # REC-002：价格口径说明 + 是否披露报价
+                        "premium_basis_note": PREMIUM_BASIS_NOTE,
+                        "premium_known": sp.premium_known,
                         "source_url": sp.source_url,
                         "source_type": sp.source_type,
                         "official_verified": sp.official_verified,

@@ -33,6 +33,8 @@ class ScoredProduct:
     type: str
     premium: float
     premium_max: float | None = None
+    # REC-002：premium_min 是否披露——未知保费产品拿中性价格分，不参与排名
+    premium_known: bool = True
     deductible: float | None = None
     sum_insured: float = 0.0
     source_url: str = ""

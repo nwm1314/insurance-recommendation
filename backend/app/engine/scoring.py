@@ -236,7 +236,17 @@ def _score_service(product: Product, benefits: list[Benefit], weights: dict[str,
 
 
 def apply_price_scoring(scored_products: list[dict]) -> list[dict]:
-    """Recalculate price competitiveness within each insurance type."""
+    """Recalculate price competitiveness within each insurance type.
+
+    REC-002：排名百分位 + 未知中性。
+    - 仅对 premium_known=True（premium_min 已披露）的产品计算价格分：按保费
+      升序排名，percentile = 1 - rank/(n-1)，最便宜得满权重、最贵得 0。
+      旧的 min-max 归一会给中间价位产品接近满分的虚高价格分（如
+      [100, 200, 100000] 中的 200），排名百分位消除了这种失真；
+    - premium_known=False 的产品价格分 = 0.5 × w × 100（中性），不参与
+      排名——保费未知不等于有竞争力，也不等于没竞争力；
+    - n==1 时该池内唯一已知产品给满权重（无比较基准，维持旧口径）。
+    """
     if not scored_products:
         return scored_products
 
@@ -247,16 +257,24 @@ def apply_price_scoring(scored_products: list[dict]) -> list[dict]:
     for products in by_type.values():
         product_type = products[0].get("type", "")
         w = _weight(_type_weights(product_type), "price", 0.18)
-        premiums = [p.get("premium", 0) for p in products]
-        min_p, max_p = min(premiums), max(premiums)
+
+        known = [p for p in products if p.get("premium_known")]
+        unknown = [p for p in products if not p.get("premium_known")]
+        neutral_price = round(0.5 * w * 100, 1)
+
+        # 保费升序排名（premium_min or 0：未知产品不参与）
+        ranked = sorted(known, key=lambda p: p.get("premium", 0))
+        n = len(ranked)
+        for rank, p in enumerate(ranked):
+            if n == 1:
+                percentile = 1.0
+            else:
+                percentile = 1 - rank / (n - 1)
+            p["score_detail"]["price"] = round(percentile * w * 100, 1)
+
+        for p in unknown:
+            p["score_detail"]["price"] = neutral_price
 
         for p in products:
-            premium = p.get("premium", 0)
-            if max_p > min_p:
-                percentile = 1 - (premium - min_p) / (max_p - min_p)
-            else:
-                percentile = 1.0
-            price_score = round(percentile * w * 100, 1)
-            p["score_detail"]["price"] = price_score
             p["score"] = sum(p["score_detail"].values())
     return scored_products

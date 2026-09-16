@@ -363,6 +363,58 @@ def test_invalid_scoring_weight_config_can_fail_fast(monkeypatch):
         monkeypatch.setattr(scoring.settings, "scoring_weights_fail_fast", False)
 
 
+def test_price_scoring_rank_percentile_beats_min_max_distortion():
+    """REC-002：排名百分位——[100, 200, 100000] 价格分单调递减，
+    中间产品得 0.5 权重（min-max 旧逻辑会给它接近满分，这是要防的回归）。"""
+    scored = [
+        {"type": "重疾险", "premium": 100, "premium_known": True, "score": 0, "score_detail": {}},
+        {"type": "重疾险", "premium": 200, "premium_known": True, "score": 0, "score_detail": {}},
+        {"type": "重疾险", "premium": 100000, "premium_known": True, "score": 0, "score_detail": {}},
+    ]
+    from backend.app.engine.scoring import apply_price_scoring
+
+    result = apply_price_scoring(scored)
+    prices = {p["premium"]: p["score_detail"]["price"] for p in result}
+    assert prices[100] > prices[200] > prices[100000]
+    w = _type_weights("重疾险")["price"] * 100
+    assert abs(prices[200] - 0.5 * w) < 0.1, "中间排名应得 0.5 权重"
+    assert abs(prices[100] - w) < 0.1, "最便宜应得满权重"
+    assert abs(prices[100000]) < 0.1, "最贵应得 0"
+
+
+def test_price_scoring_unknown_premium_gets_neutral_score():
+    """REC-002：保费未知的产品拿中性价格分（0.5×w×100），不参与排名。"""
+    scored = [
+        {"type": "重疾险", "premium": 100, "premium_known": True, "score": 0, "score_detail": {}},
+        {"type": "重疾险", "premium": 0, "premium_known": False, "score": 0, "score_detail": {}},
+        {"type": "重疾险", "premium": 500, "premium_known": True, "score": 0, "score_detail": {}},
+    ]
+    from backend.app.engine.scoring import apply_price_scoring
+
+    result = apply_price_scoring(scored)
+    w = _type_weights("重疾险")["price"] * 100
+    neutral = 0.5 * w
+    unknown = next(p for p in result if not p["premium_known"])
+    assert abs(unknown["score_detail"]["price"] - neutral) < 0.1
+    # 已知产品仍正常排名，且未知产品的存在不影响它们的百分位
+    known_sorted = sorted((p for p in result if p["premium_known"]), key=lambda p: p["premium"])
+    assert known_sorted[0]["score_detail"]["price"] > known_sorted[1]["score_detail"]["price"]
+
+
+def test_price_scoring_all_unknown_all_neutral():
+    """REC-002：全未知保费 → 全部中性分。"""
+    scored = [
+        {"type": "意外险", "premium": 0, "premium_known": False, "score": 0, "score_detail": {}},
+        {"type": "意外险", "premium": 0, "premium_known": False, "score": 0, "score_detail": {}},
+    ]
+    from backend.app.engine.scoring import apply_price_scoring
+
+    result = apply_price_scoring(scored)
+    w = _type_weights("意外险")["price"] * 100
+    for p in result:
+        assert abs(p["score_detail"]["price"] - 0.5 * w) < 0.1
+
+
 def test_recommendation_api_stage3_filters_and_response(client):
     _seed_products()
     payload = _base_payload()
