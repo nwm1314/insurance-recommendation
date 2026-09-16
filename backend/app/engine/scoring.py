@@ -104,7 +104,7 @@ def score_product(
 
     flexibility = _score_flexibility(rule, weights)
 
-    waiting = _score_waiting(rule, weights)
+    waiting = _score_waiting(rule, weights, product.type)
 
     waiver = _score_waiver(rule, weights)
 
@@ -139,10 +139,20 @@ def _score_coverage(product: Product, benefits: list[Benefit], weights: dict[str
     score = 0.0
     max_score = 100.0
 
-    # Disease count (80-180 → 0-50 points)
-    if product.disease_count:
-        disease_score = min(50, (product.disease_count - 80) / 100 * 50)
-        score += max(0, disease_score)
+    # REC-003 险种特化：disease_count（重病种数）只对重疾/防癌有意义，
+    # 医疗/意外/寿险不再使用该分量，其 50 分量并入 benefit_count 与
+    # 类型自有布尔（避免医疗险因无病种数被压到 50 分上限以下）。
+    counts_diseases = product.type in ("重疾险", "防癌险")
+    if counts_diseases:
+        # Disease count (80-180 → 0-50 points)
+        if product.disease_count:
+            disease_score = min(50, (product.disease_count - 80) / 100 * 50)
+            score += max(0, disease_score)
+    else:
+        # 非重疾/防癌：基础责任数量（basic benefits 含轻微/中症等条目）
+        # 顶替病种数分量（0-50，每条 10 分封顶 50）
+        benefit_count = len([b for b in benefits if b.benefit_type == "basic"])
+        score += min(50, benefit_count * 10)
 
     # Has mild +10, has moderate +10
     if product.has_mild_coverage:
@@ -182,12 +192,20 @@ def _score_flexibility(rule: Rule, weights: dict[str, float]) -> float:
     return round(((health_score + job_score) / 100) * w * 100, 1)
 
 
-def _score_waiting(rule: Rule, weights: dict[str, float]) -> float:
+def _score_waiting(rule: Rule, weights: dict[str, float], product_type: str | None = None) -> float:
     w = _weight(weights, "waiting", 0.10)
-    best = SCORING.get("waiting_period_best", 90)
+    # REC-003：waiting_period_best 支持按险种覆盖——意外险（通常无等待期）
+    # 与医疗险的最优等待期与长期险不同。yaml 缺失时回退全局 best。
+    best_by_type = SCORING.get("waiting_period_best_by_type") or {}
+    if product_type and product_type in best_by_type:
+        best = best_by_type[product_type]
+    else:
+        best = SCORING.get("waiting_period_best", 90)
     worst = SCORING.get("waiting_period_worst", 180)
 
-    days = rule.waiting_period_days or 90
+    # 注意用 is not None 判断：意外险等待期 0 天是合法值，`or 90` 会把 0
+    # 静默替换成 90（REC-003 按险种 best=0 评分时必须保留 0）
+    days = rule.waiting_period_days if rule.waiting_period_days is not None else 90
     if days <= best:
         return round(w * 100, 1)
     if days >= worst:

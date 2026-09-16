@@ -62,6 +62,11 @@ type_weights:
 scoring:
   waiting_period_best: 90     # 等待期满分阈值（天）
   waiting_period_worst: 180   # 等待期最低分阈值（天）
+  # REC-003：按险种覆盖最优等待期——意外险通常无等待期（0 天满分），
+  # 医疗险常见 30 天；未列出的险种回退 waiting_period_best
+  waiting_period_best_by_type:
+    医疗险: 30
+    意外险: 0
   health_disclosure_best: 3   # 健康告知最少条数（满分）
   health_disclosure_worst: 15 # 健康告知最多条数（最低分）
   job_class_best: 6           # 职业限制最宽松

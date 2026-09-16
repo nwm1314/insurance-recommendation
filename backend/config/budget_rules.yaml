@@ -1,6 +1,5 @@
 income_tiers:
   - max_income: 50000
-    budget_ratio: 0.05
     allocation:
       medical: 0.30
       accident: 0.30
@@ -8,7 +7,6 @@ income_tiers:
       life: 0.10
       cancer: 0.05
   - max_income: 150000
-    budget_ratio: 0.08
     allocation:
       medical: 0.15
       accident: 0.15
@@ -16,7 +14,6 @@ income_tiers:
       life: 0.25
       cancer: 0.05
   - max_income: 300000
-    budget_ratio: 0.09
     allocation:
       medical: 0.10
       accident: 0.10
@@ -24,7 +21,6 @@ income_tiers:
       life: 0.30
       cancer: 0.05
   - max_income: 999999999
-    budget_ratio: 0.10
     allocation:
       medical: 0.10
       accident: 0.10
@@ -32,14 +28,17 @@ income_tiers:
       life: 0.35
       cancer: 0.05
 
-budget_tiers:
-  - max_ratio: 0.03
+# REC-003：绝对年预算分层（单位元）——optional 险种按总预算决定是否入池；
+# 按 ratio 决定险种集合。缺失时引擎回退内置同构分层。
+# 险种集合的唯一真相是本节的 absolute_budget_tiers。）
+absolute_budget_tiers:
+  - max_budget: 1000
     types: [医疗险, 意外险]
-  - max_ratio: 0.05
+  - max_budget: 3000
     types: [医疗险, 意外险, 重疾险]
-  - max_ratio: 0.08
+  - max_budget: 6000
     types: [医疗险, 意外险, 重疾险, 定期寿险]
-  - max_ratio: 0.10
+  - max_budget: null
     types: [医疗险, 意外险, 重疾险, 定期寿险, 防癌险]
 
 sum_insured:

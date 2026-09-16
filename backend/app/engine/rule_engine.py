@@ -10,13 +10,19 @@ from backend.app.engine.health import analyze_health_issues, evaluate_health_mat
 RULE_VERSION = "2"
 
 # Age-type matching matrix: {age_group: {insurance_type: rule}}
+# REC-003 软化：
+# - 56+ 重疾险 forbidden → discouraged：默认不推荐，但产品自身可投
+#   （rule.max_age 覆盖用户年龄）时该产品仍可入池；
+# - 46-55 防癌险 required → optional（偏好可入池，不强制）；
+# - 18-45 防癌险 forbidden → optional（健康人群不再被硬拦）；
+# - 0-17 定期寿险 forbidden 保持硬禁止（不可被推翻）。
 TYPE_MATRIX = {
     "0-17":    {"医疗险": "required", "意外险": "required", "重疾险": "required", "定期寿险": "forbidden", "防癌险": "forbidden"},
-    "18-25":   {"医疗险": "required", "意外险": "required", "重疾险": "required", "定期寿险": "optional", "防癌险": "forbidden"},
-    "26-35":   {"医疗险": "required", "意外险": "required", "重疾险": "required", "定期寿险": "required", "防癌险": "forbidden"},
-    "36-45":   {"医疗险": "required", "意外险": "required", "重疾险": "required", "定期寿险": "required", "防癌险": "forbidden"},
-    "46-55":   {"医疗险": "required", "意外险": "required", "重疾险": "optional", "定期寿险": "optional", "防癌险": "required"},
-    "56+":     {"医疗险": "required", "意外险": "required", "重疾险": "forbidden", "定期寿险": "forbidden", "防癌险": "required"},
+    "18-25":   {"医疗险": "required", "意外险": "required", "重疾险": "required", "定期寿险": "optional", "防癌险": "optional"},
+    "26-35":   {"医疗险": "required", "意外险": "required", "重疾险": "required", "定期寿险": "required", "防癌险": "optional"},
+    "36-45":   {"医疗险": "required", "意外险": "required", "重疾险": "required", "定期寿险": "required", "防癌险": "optional"},
+    "46-55":   {"医疗险": "required", "意外险": "required", "重疾险": "optional", "定期寿险": "optional", "防癌险": "optional"},
+    "56+":     {"医疗险": "required", "意外险": "required", "重疾险": "discouraged", "定期寿险": "forbidden", "防癌险": "optional"},
 }
 
 PREFERRED_TYPE_LABELS = {
@@ -59,9 +65,24 @@ def get_allowed_types(user: UserProfile) -> set[str]:
     forbidden); preferred types that are already required/optional-in-budget
     keep their existing semantics.
     """
-    budget_tier = _get_budget_tier(user.budget_ratio)
+    allowed, _discouraged = get_allowed_and_discouraged_types(user)
+    return allowed
+
+
+def get_allowed_and_discouraged_types(user: UserProfile) -> tuple[set[str], set[str]]:
+    """REC-003：返回 (allowed, discouraged)。
+
+    - forbidden：硬禁止，永不入池；
+    - discouraged：默认不入池（不在 allowed 中），但保留为独立集合——
+      逐产品判定时若产品自身可投（rule.max_age 覆盖用户年龄），该产品
+      仍可入池（仅此产品，不整类放开）；
+    - optional：按绝对预算分层入池；
+    - required：始终入池。
+    """
+    budget_tier = _get_budget_tier(user)
     age_group = _get_age_group(user.age)
-    allowed = set()
+    allowed: set[str] = set()
+    discouraged: set[str] = set()
     for ins_type, rule in TYPE_MATRIX.get(age_group, {}).items():
         if rule == "forbidden":
             continue
@@ -69,21 +90,42 @@ def get_allowed_types(user: UserProfile) -> set[str]:
             allowed.add(ins_type)  # always include required types
         elif rule == "optional" and ins_type in budget_tier:
             allowed.add(ins_type)
+        elif rule == "discouraged":
+            discouraged.add(ins_type)
     preferred = normalize_preferred_type(user.preferred_type)
     if preferred and preferred in TYPE_MATRIX.get(age_group, {}):
-        if TYPE_MATRIX[age_group][preferred] == "optional":
+        if TYPE_MATRIX[age_group][preferred] in ("optional", "discouraged"):
+            # 偏好可把 optional/discouraged 类型提回池（discouraged 的产品级
+            # 复原之外再给一个显式偏好通道，仍不越过 forbidden）
             allowed.add(preferred)
-    return allowed
+            discouraged.discard(preferred)
+    return allowed, discouraged
 
 
-def _get_budget_tier(ratio: float) -> set[str]:
-    if ratio <= 0.03:
-        return {"医疗险", "意外险"}
-    if ratio <= 0.05:
-        return {"医疗险", "意外险", "重疾险"}
-    if ratio <= 0.08:
-        return {"医疗险", "意外险", "重疾险", "定期寿险"}
-    return {"医疗险", "意外险", "重疾险", "定期寿险", "防癌险"}
+# REC-003：绝对年预算分层（budget_rules.yaml absolute_budget_tiers 缺失时
+# 回退内置值——模式与 scoring.py 的 yaml 校验回退一致）。分层只看总预算：
+# 用户 slider 通过 total_budget = income × ratio 间接影响分层，不再直接
+# 按 ratio 决定险种集合（30 万收入 × 3% = 9000 元预算应可配重疾）。
+_ABSOLUTE_BUDGET_TIERS_FALLBACK = [
+    {"max_budget": 1000, "types": ["医疗险", "意外险"]},
+    {"max_budget": 3000, "types": ["医疗险", "意外险", "重疾险"]},
+    {"max_budget": 6000, "types": ["医疗险", "意外险", "重疾险", "定期寿险"]},
+    {"max_budget": None, "types": ["医疗险", "意外险", "重疾险", "定期寿险", "防癌险"]},
+]
+
+
+def _get_budget_tier(user: UserProfile) -> set[str]:
+    """按绝对年预算（total_budget）决定 optional 险种集合。"""
+    from backend.app.config import BUDGET_RULES
+
+    budget = calculate_budget(user)
+    tiers = BUDGET_RULES.get("absolute_budget_tiers") or _ABSOLUTE_BUDGET_TIERS_FALLBACK
+    for tier in tiers:
+        max_budget = tier.get("max_budget")
+        if max_budget is None or budget.total_budget <= max_budget:
+            return set(tier.get("types") or [])
+    # 兜底：最后一个 none 上限层未配置时返回最保守集合
+    return {"医疗险", "意外险"}
 
 
 TYPE_BUDGET_KEYS = {
@@ -210,8 +252,10 @@ def filter_candidate_pool_with_reasons(db: Session, user: UserProfile) -> tuple[
     Candidate order is profile-aware (tie-break only): preferred-type products
     first, duplicate-coverage products last. Products are never excluded for
     existing coverage or type preference — hard rules alone decide exclusion.
+    REC-003：discouraged 类型（如 56+ 重疾）默认不入池，但逐产品判定时，
+    产品自身 rule.max_age 覆盖用户年龄 → 该产品入池（仅此产品）。
     """
-    allowed_types = get_allowed_types(user)
+    allowed_types, discouraged_types = get_allowed_and_discouraged_types(user)
     type_budget_limits = get_type_budget_limits(user) if user.annual_income > 0 else {}
     candidates: list[Product] = []
     rejected: list[dict] = []
@@ -238,7 +282,7 @@ def filter_candidate_pool_with_reasons(db: Session, user: UserProfile) -> tuple[
                 "reason": "产品缺少投保规则，不可作为可售产品推荐",
             })
             continue
-        rejection = _product_rejection_reason(product, rule, user, allowed_types, type_budget_limits)
+        rejection = _product_rejection_reason(product, rule, user, allowed_types, type_budget_limits, discouraged_types)
         if rejection:
             rejected.append({
                 "product_id": product.id,
@@ -345,15 +389,25 @@ def _product_rejection_reason(
     user: UserProfile,
     allowed_types: set[str],
     type_budget_limits: dict[str, float],
+    discouraged_types: set[str] | None = None,
 ) -> dict | None:
     if product.status != 1:
         return {"code": "inactive", "reason": "产品已停售或暂不可售"}
     if product.type not in allowed_types:
-        if product.type == "定期寿险" and user.age <= 17:
-            return {"code": "type_forbidden", "reason": "未成年人硬规则不推荐定期寿险"}
-        if product.type == "重疾险" and user.age > 55:
-            return {"code": "type_forbidden", "reason": "55岁以上硬规则不推荐重疾险"}
-        return {"code": "type_not_in_plan", "reason": "当前年龄或预算层级下不配置该险种"}
+        # REC-003：discouraged 类型（默认不推荐）的产品级复原——产品自身
+        # 可投年龄覆盖用户年龄时放行该产品，不整类放开。
+        if discouraged_types and product.type in discouraged_types:
+            if rule.max_age >= user.age:
+                pass  # 逐项继续走年龄/职业/健康与预算校验
+            else:
+                return {
+                    "code": "type_not_in_plan",
+                    "reason": "该险种对此年龄默认不推荐，且产品投保年龄不覆盖当前年龄",
+                }
+        else:
+            if product.type == "定期寿险" and user.age <= 17:
+                return {"code": "type_forbidden", "reason": "未成年人硬规则不推荐定期寿险"}
+            return {"code": "type_not_in_plan", "reason": "当前年龄或预算层级下不配置该险种"}
     if rule.min_age > user.age or rule.max_age < user.age:
         return {"code": "age_not_allowed", "reason": f"投保年龄不匹配，允许 {rule.min_age}-{rule.max_age} 岁"}
     if rule.job_class_limit < user.job_class:

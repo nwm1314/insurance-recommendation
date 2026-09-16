@@ -180,8 +180,9 @@ def _build_hard_rule_summary(user: UserProfile) -> list[str]:
             notes.append("预算准入按险种最低保费判断：" + "、".join(parts))
     if user.age <= 17:
         notes.append("未成年人硬规则：不推荐定期寿险")
+    # REC-003：56+ 重疾险从绝对禁止软化为 discouraged——产品可投时除外
     if user.age > 55:
-        notes.append("55岁以上硬规则：不推荐重疾险，优先考虑防癌险")
+        notes.append("56岁以上默认不推荐重疾险，产品可投时除外；优先考虑防癌险")
     return notes
 
 

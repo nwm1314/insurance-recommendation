@@ -41,6 +41,7 @@ from backend.app.engine.rule_engine import (
     evaluate_coverage_duplicate,
     filter_candidate_pool_with_profile,
     filter_candidate_pool_with_reasons,
+    get_allowed_and_discouraged_types,
     get_allowed_types,
     normalize_preferred_type,
     preferred_type_priority,
@@ -283,18 +284,61 @@ def test_preferred_type_priority():
 
 
 def test_preferred_type_promotes_optional_only():
-    # 46-55 组：定期寿险 optional，预算 3% 层级不含它 → 偏好可将其带入
-    mid_age = _user(age=50, budget_ratio=0.03, preferred_type="定期寿险")
-    assert "定期寿险" in get_allowed_types(mid_age)
-    assert {"医疗险", "意外险", "防癌险", "定期寿险"} <= get_allowed_types(mid_age)
+    # 46-55 组：防癌/定寿 optional；总预算 6000（20万×3%）层不含防癌 →
+    # 偏好可将其带入
+    mid_age = _user(age=50, budget_ratio=0.03, preferred_type="防癌险")
+    assert "防癌险" in get_allowed_types(mid_age)
+    assert {"医疗险", "意外险", "重疾险", "定期寿险"} <= get_allowed_types(mid_age)
 
-    # 26-35 组：防癌险 forbidden（硬规则），偏好不得覆盖
+    # REC-003：26-35 组防癌险已软化为 optional——偏好可将其带入
     young = _user(age=30, preferred_type="防癌险")
-    assert "防癌险" not in get_allowed_types(young)
+    assert "防癌险" in get_allowed_types(young)
 
-    # 非法偏好值：不影响允许集合
+    # 偏好不得覆盖 forbidden：0-17 定期寿险硬禁止
+    child = _user(age=12, preferred_type="定期寿险")
+    assert "定期寿险" not in get_allowed_types(child)
+
+    # 非法偏好值：不影响允许集合（6000 元预算层含定寿、不含防癌）
     bogus = _user(age=50, budget_ratio=0.03, preferred_type="超能力险")
-    assert "定期寿险" not in get_allowed_types(bogus)
+    assert "防癌险" not in get_allowed_types(bogus)
+
+
+def test_senior_discouraged_ci_product_recovers_by_max_age():
+    """REC-003：58 岁用户——库中存在 max_age=70 的重疾产品 → 该产品入池；
+    产品投保年龄改为不覆盖 58 岁 → 不入池（discouraged 默认不入，
+    产品自身可投才复原）。"""
+    _seed_products()
+    db = SessionLocal()
+    try:
+        user = _user(age=58, life_stage="retired")
+        names = _candidate_names(db, user)
+        assert "重疾A" in names, "max_age 覆盖 58 岁的重疾产品应入池"
+        # 将重疾A 的 max_age 改为 55 → 不再覆盖 58 岁 → 不入池
+        ci = db.query(Product).filter(Product.name == "重疾A").first()
+        rule = db.query(Rule).filter(Rule.product_id == ci.id).first()
+        rule.max_age = 55
+        db.commit()
+        names = _candidate_names(db, user)
+        assert "重疾A" not in names, "产品投保年龄不覆盖 58 岁时不应入池"
+    finally:
+        db.close()
+
+
+def test_accident_waiting_period_zero_gets_full_score():
+    """REC-003：意外险按险种最优等待期（0 天）评分——0 天等待期应得满分。"""
+    from backend.app.engine.scoring import _score_waiting, _type_weights
+
+    class _Rule:
+        waiting_period_days = 0
+
+    w = _type_weights("意外险")["waiting"]
+    assert _score_waiting(_Rule(), _type_weights("意外险"), "意外险") == round(w * 100, 1)
+    # 未传险种时回退全局 best=90 → 0 天也满分（行为不变）
+    assert _score_waiting(_Rule(), _type_weights("意外险")) == round(w * 100, 1)
+    # 90 天等待期的意外险：按险种 best=0 计算 → 不满分（偏离旧全局口径）
+    class _Rule90:
+        waiting_period_days = 90
+    assert _score_waiting(_Rule90(), _type_weights("意外险"), "意外险") < w * 100
 
 
 def test_preferred_type_orders_candidates_first():
@@ -317,17 +361,26 @@ def test_typical_profiles_allowed_types():
 
     adult = _user(age=32)
     assert {"医疗险", "意外险", "重疾险", "定期寿险"} <= get_allowed_types(adult)
-    assert "防癌险" not in get_allowed_types(adult)
+    # REC-003：18-45 防癌险 forbidden → optional，16000 元总预算层（全量）入池
+    assert "防癌险" in get_allowed_types(adult)
 
+    # REC-003：56+ 重疾险 forbidden → discouraged（不在 allowed，产品可投时可入池）；
+    # 46-55 防癌 required → optional，16000 元总预算层（全量）入池
     senior = _user(age=60, annual_income=100000, budget_ratio=0.08, life_stage="retired")
-    senior_allowed = get_allowed_types(senior)
+    senior_allowed, senior_discouraged = get_allowed_and_discouraged_types(senior)
     assert senior_allowed == {"医疗险", "意外险", "防癌险"}
-    assert "重疾险" not in senior_allowed
+    assert "重疾险" in senior_discouraged
     assert "定期寿险" not in senior_allowed
 
+    # REC-003：预算分层改按绝对值——32 岁 × 3% = 6000 元 → ≤6000 层
+    # （医疗+意外+重疾+定寿，防癌不入）
     low_budget = _user(age=32, budget_ratio=0.03)
-    # required 险种不受预算层级影响，恒入池
     assert get_allowed_types(low_budget) == {"医疗险", "意外险", "重疾险", "定期寿险"}
+
+    # REC-003 关键翻转反例：30 万收入 × 3% = 9000 元总预算 → 重疾险可入池
+    # （旧按 ratio 分层逻辑会把重疾排除，尽管 9000 元预算足够）
+    high_income_low_ratio = _user(age=32, annual_income=300000, budget_ratio=0.03)
+    assert "重疾险" in get_allowed_types(high_income_low_ratio)
 
 
 # ---------------------------------------------------------------- traceability
