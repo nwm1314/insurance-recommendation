@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from backend.app.database import get_db
 from backend.app.dependencies.auth import get_optional_current_user
@@ -12,7 +12,8 @@ from backend.app.schemas.user_profile import UserProfileRequest
 from backend.app.engine.models import UserProfile, ScoredProduct
 from backend.app.engine.rule_engine import filter_candidate_pool_with_profile, get_allowed_types, get_type_budget_limits
 from backend.app.engine.scoring import score_product, apply_price_scoring
-from backend.app.engine.budget import calculate_budget, calculate_sum_insured
+from backend.app.engine.budget import calculate_budget, calculate_sum_insured, calculate_coverage_gaps
+from backend.app.engine.occupation import resolve_job_class
 from backend.app.engine.combo_builder import build_ai_pick_package, build_combos
 from backend.app.engine.ai_engine import ai_rerank_sync
 from backend.app.engine.fallback import get_fallback_narrative
@@ -117,6 +118,8 @@ def _run_rule_engine(db: Session, user: UserProfile) -> dict:
         "sum_insured": sum_insured,
         "packages": packages,
         "scored": scored,
+        # REC-001：已有保单缺口分析（软层展示，不参与评分）
+        "coverage_gaps": calculate_coverage_gaps(user, sum_insured),
         "coverage_gap_summary": _build_gap_summary(user, packages),
         "hard_rule_summary": _build_hard_rule_summary(user),
         "not_recommended_summary": _summarize_rejections(rejected_products),
@@ -219,6 +222,35 @@ def _build_gap_summary(user: UserProfile, packages) -> list[str]:
     return notes
 
 
+def _resolve_social_insurance(request: UserProfileRequest) -> str:
+    """REC-001：social_insurance 未显式提供时按 existing_coverage 兼容推断。
+
+    旧客户端不传 social_insurance、只在 existing_coverage 里写 "social"——
+    这种请求按职工社保处理，行为与升级前一致。
+    """
+    if request.social_insurance != "none":
+        return request.social_insurance
+    if "social" in (request.existing_coverage or []):
+        return "employee"
+    return "none"
+
+
+def _resolve_job_class(request: UserProfileRequest) -> int:
+    """REC-001：显式 job_class 优先；否则由 occupation_name 关键词解析。
+
+    两者都不可得时 422——职业等级影响硬过滤，不能静默猜默认值。
+    """
+    if request.job_class is not None:
+        return request.job_class
+    resolved = resolve_job_class(request.occupation_name)
+    if resolved is None:
+        raise HTTPException(
+            status_code=422,
+            detail="请选择职业风险等级（1-6 类），或提供可识别的职业名称",
+        )
+    return resolved
+
+
 @router.post("/recommend")
 def recommend(
     request: UserProfileRequest,
@@ -227,7 +259,8 @@ def recommend(
 ):
     user = UserProfile(
         age=request.age, gender=request.gender,
-        annual_income=request.annual_income, job_class=request.job_class,
+        annual_income=request.annual_income,
+        job_class=_resolve_job_class(request),
         life_stage=request.life_stage, family_burden=request.family_burden,
         health_status=request.health_status, health_issues=request.health_issues,
         existing_coverage=request.existing_coverage,
@@ -235,6 +268,9 @@ def recommend(
         preferred_type=request.preferred_type,
         preferred_companies=request.preferred_companies,
         enable_llm_engine=request.enable_llm_engine,
+        social_insurance=_resolve_social_insurance(request),
+        occupation_name=request.occupation_name,
+        existing_policies=[policy.model_dump() for policy in request.existing_policies],
     )
 
     result = _run_rule_engine(db, user)
@@ -304,6 +340,14 @@ def recommend(
         save_recommendation_record(db, current_user, request.model_dump(), response)
     return response
 
+def _medical_social_note(user: UserProfile) -> str | None:
+    """REC-001：无社保身份的医疗险建议提示（仅文案，产品侧无社保要求字段，
+    不做硬过滤）。"""
+    if user.social_insurance == "none":
+        return "无社保身份：商业医疗险保费通常更高，且部分产品不接受无社保人群投保，投保前请确认健康告知与社保要求"
+    return None
+
+
 def _build_response(user: UserProfile, result: dict, engine_mode: str = "rule") -> dict:
     budget = result["budget"]
     si = result["sum_insured"]
@@ -329,7 +373,11 @@ def _build_response(user: UserProfile, result: dict, engine_mode: str = "rule") 
             "critical_illness": si.critical_illness,
             "life": si.life,
             "cancer": si.cancer,
+            # REC-001：无社保提示（有社保时为 null）
+            "medical_social_note": _medical_social_note(user),
         },
+        # REC-001：按险种的保额缺口 {"suggested", "existing", "gap"}（单位元）
+        "coverage_gaps": result.get("coverage_gaps") or {},
         "packages": [
             {
                 "tag": p.tag,

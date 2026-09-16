@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from backend.app.models.product import Product
 from backend.app.models.rule import Rule
 from backend.app.engine.models import UserProfile
-from backend.app.engine.budget import calculate_budget
+from backend.app.engine.budget import calculate_budget, calculate_sum_insured
 from backend.app.engine.health import analyze_health_issues, evaluate_health_match
 
 # DATA-002：规则矩阵版本。TYPE_MATRIX 矩阵语义变更时手动递增，
@@ -103,11 +103,39 @@ def get_type_budget_limits(user: UserProfile) -> dict[str, float]:
     }
 
 
+def _existing_policy_amount_for(user: UserProfile, product_type: str) -> float:
+    """Sum disclosed sum-insured of the user's existing policies of one type (元)."""
+    total = 0.0
+    for policy in user.existing_policies or []:
+        if isinstance(policy, dict) and (policy.get("type") or "").strip() == product_type:
+            total += policy.get("sum_insured") or 0
+    return total
+
+
 def evaluate_coverage_duplicate(user: UserProfile, product_type: str) -> dict | None:
     """Soft duplicate-coverage mark for a product type based on existing_coverage.
 
     Never hard-excludes: marks are informational and feed ranking tie-breaks.
+    REC-001: existing_policies 精确到险种+保额——同险种已披露保额合计达到建议
+    保额的 50% 以上时，升级为"已有同类较高保额"提示（比泛化的 commercial
+    标记更具体）。
     """
+    existing_total = _existing_policy_amount_for(user, product_type)
+    if existing_total > 0:
+        advice = calculate_sum_insured(user)
+        suggested = {
+            "医疗险": advice.medical,
+            "意外险": advice.accident,
+            "重疾险": advice.critical_illness,
+            "定期寿险": advice.life,
+            "防癌险": advice.cancer,
+        }.get(product_type)
+        if suggested and existing_total >= suggested * 0.5:
+            return {
+                "code": "high_existing_coverage",
+                "label": "已有同类较高保额",
+                "note": f"您已持有同类保障约{existing_total:.0f}元保额（建议保额{suggested:.0f}元的 50% 以上），再次配置边际作用有限，请按实际需求决定；系统不排除推荐，仅作提示",
+            }
     coverage = set(user.existing_coverage or [])
     if "commercial" in coverage:
         return {

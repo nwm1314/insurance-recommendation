@@ -165,6 +165,122 @@ def test_data_stale_annotation_in_recommend_response(client):
     assert items["未复核寿险Smoke"]["last_verified_at"] is None
 
 
+def test_existing_policies_drive_coverage_gaps_and_duplicate_upgrade(client):
+    """REC-001：已有保单参与缺口分析（gap=建议-已披露合计），且同险种
+    达到建议保额 50% 时重复标记升级为 high_existing_coverage。"""
+    db = SessionLocal()
+    try:
+        ci = Product(name="普通重疾Smoke", company="GapCo", type="重疾险", status=1,
+                     premium_min=1000, premium_max=2000, sum_insured_max=50, disease_count=120,
+                     source_url="https://example.com/ci-gap")
+        db.add(ci)
+        db.flush()
+        db.add(Rule(product_id=ci.id, min_age=18, max_age=60, job_class_limit=6, waiting_period_days=90))
+        db.commit()
+    finally:
+        db.close()
+
+    payload = _base_payload()
+    payload.update({"age": 30, "existing_policies": [
+        {"type": "重疾险", "sum_insured": 500000, "annual_premium": 2000},
+    ]})
+    response = client.post("/api/recommend", json=payload)
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    gaps = body["coverage_gaps"]
+    assert set(gaps) == {"医疗险", "意外险", "重疾险", "定期寿险", "防癌险"}
+    suggested_ci = gaps["重疾险"]["suggested"]
+    assert suggested_ci > 0
+    assert gaps["重疾险"]["existing"] == 500000
+    assert gaps["重疾险"]["gap"] == suggested_ci - 500000
+    # 未披露保额按 0 计入
+    assert gaps["医疗险"]["existing"] == 0
+
+    # 重疾建议保额 = min(3×收入+30万, 100万) = 60万；已披露 50 万 ≥ 50% → 升级标记
+    assessments = body["profile_assessment"]["assessments"]
+    ci_marks = [
+        a["coverage_duplicate"]
+        for a in assessments
+        if a["type"] == "重疾险" and a["coverage_duplicate"]
+    ]
+    assert ci_marks, "重疾候选应有重复保障标记"
+    assert all(m["code"] == "high_existing_coverage" for m in ci_marks)
+    assert "重疾险" in body["profile_assessment"]["coverage"]["marked_types"]
+
+
+def test_occupation_name_resolves_job_class_for_filtering(client):
+    """REC-001：未显式选择 job_class 时由 occupation_name 解析（矿工=6 类），
+    6 类职业限制产品被正确过滤。"""
+    db = SessionLocal()
+    try:
+        open_to_all = Product(name="全职业医疗Smoke", company="OccCo", type="医疗险", status=1,
+                              premium_min=500, premium_max=800, sum_insured_max=300,
+                              source_url="https://example.com/occ-all")
+        restricted = Product(name="仅低职业医疗Smoke", company="OccCo", type="医疗险", status=1,
+                             premium_min=600, premium_max=900, sum_insured_max=300,
+                             source_url="https://example.com/occ-low")
+        db.add_all([open_to_all, restricted])
+        db.flush()
+        db.add(Rule(product_id=open_to_all.id, min_age=18, max_age=60, job_class_limit=6, waiting_period_days=30))
+        db.add(Rule(product_id=restricted.id, min_age=18, max_age=60, job_class_limit=2, waiting_period_days=30))
+        db.commit()
+    finally:
+        db.close()
+
+    payload = _base_payload()
+    payload.pop("job_class")
+    payload.update({"age": 30, "occupation_name": "矿工"})
+    response = client.post("/api/recommend", json=payload)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    rejected = {
+        item["name"]
+        for item in body["not_recommended_details"]
+        if item["reason_code"] == "job_class_not_allowed"
+    }
+    assert "仅低职业医疗Smoke" in rejected, "6 类职业应被 job_class_limit=2 的产品拒绝"
+
+
+def test_job_class_and_occupation_both_missing_returns_422(client):
+    """REC-001：job_class 与 occupation_name 都缺失时 422，不静默猜默认值。"""
+    payload = _base_payload()
+    payload.pop("job_class")
+    response = client.post("/api/recommend", json=payload)
+    assert response.status_code == 422, response.text
+
+
+def test_social_insurance_compat_and_medical_note(client):
+    """REC-001：旧请求（existing_coverage 含 social）按职工社保兼容处理；
+    无社保身份时医疗建议附提示文案。"""
+    # 旧式：existing_coverage=["social"] → 推断 employee → 无提示
+    payload = _base_payload()
+    payload["existing_coverage"] = ["social"]
+    response = client.post("/api/recommend", json=payload)
+    assert response.status_code == 200, response.text
+    assert response.json()["sum_insured_advice"]["medical_social_note"] is None
+
+    # 显式无社保 → 有提示
+    payload = _base_payload()
+    payload["social_insurance"] = "none"
+    response = client.post("/api/recommend", json=payload)
+    assert response.status_code == 200, response.text
+    note = response.json()["sum_insured_advice"]["medical_social_note"]
+    assert note and "无社保" in note
+
+
+def test_legacy_request_without_new_fields_keeps_shape(client):
+    """REC-001：旧请求（无新字段）行为不变——coverage_gaps 为新增展示字段，
+    已有保额合计为 0、gap=建议值。"""
+    payload = _base_payload()
+    response = client.post("/api/recommend", json=payload)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    gaps = body["coverage_gaps"]
+    assert all(item["existing"] == 0 and item["gap"] == item["suggested"] for item in gaps.values())
+    assert body["sum_insured_advice"]["medical_social_note"] is not None
+
+
 def test_stage3_scoring_budget_and_ai_invariants():
     assert _type_weights("医疗险")["coverage"] != _type_weights("定期寿险")["coverage"]
     assert abs(sum(DEFAULT_TYPE_WEIGHTS["医疗险"].values()) - 1.0) < 0.0001

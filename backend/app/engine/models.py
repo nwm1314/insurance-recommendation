@@ -17,6 +17,12 @@ class UserProfile:
     preferred_type: Optional[str] = None
     preferred_companies: list[str] = field(default_factory=list)
     enable_llm_engine: bool = False
+    # REC-001 画像 v2：社保身份 / 职业名称 / 已有保单明细（仅软层参与决策）
+    social_insurance: str = "none"   # none / employee / resident / new_rural
+    occupation_name: Optional[str] = None
+    existing_policies: list[dict] = field(default_factory=list)
+    # 元素：{"type": "重疾险", "sum_insured": 500000, "annual_premium": 2000}
+    # （单位元；sum_insured 允许 None 表示未披露）
 
 
 @dataclass

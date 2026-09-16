@@ -1,11 +1,11 @@
 ﻿import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Form, InputNumber, Select, Radio, Checkbox, Slider, Button, Card, Space, Typography, Row, Col, Divider, Tag, Tooltip, Alert, message } from 'antd';
-import { QuestionCircleOutlined } from '@ant-design/icons';
+import { Form, InputNumber, Select, AutoComplete, Radio, Checkbox, Slider, Button, Card, Space, Typography, Row, Col, Divider, Tag, Tooltip, Alert, message } from 'antd';
+import { QuestionCircleOutlined, MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import ProgressSteps from '../components/ProgressSteps';
 import EngineSwitch from '../components/EngineSwitch';
 import { fetchProfileDetail } from '../api/auth';
-import type { UserProfile } from '../types';
+import type { UserProfile, ExistingPolicy } from '../types';
 
 const { Title, Text } = Typography;
 
@@ -139,9 +139,47 @@ const COMPANY_OPTIONS: CompanyOption[] = [
 
 const TIER_COLORS: Record<number, string> = { 1: 'blue', 2: 'purple', 3: 'orange' };
 const TIER_LABELS: Record<number, string> = { 1: '老牌大厂', 2: '合资险企', 3: '互联网/高性价比' };
+
+// REC-001 常见职业提示（关键词与后端 occupations.yaml 保持一致）；选择后自动带出
+// 等级，用户也可改选手动等级或直接输入其他职业名称（由后端关键词解析）
+interface OccupationHint { label: string; value: string; cls: number; }
+const OCCUPATION_OPTIONS: OccupationHint[] = [
+  { label: '程序员/软件工程师', value: '程序员', cls: 1 },
+  { label: '会计师', value: '会计师', cls: 1 },
+  { label: '教师', value: '教师', cls: 1 },
+  { label: '律师', value: '律师', cls: 1 },
+  { label: '医生', value: '医生', cls: 1 },
+  { label: '销售', value: '销售', cls: 2 },
+  { label: '记者', value: '记者', cls: 2 },
+  { label: '厨师', value: '厨师', cls: 2 },
+  { label: '快递员', value: '快递员', cls: 2 },
+  { label: '外卖配送员', value: '外卖', cls: 2 },
+  { label: '司机', value: '司机', cls: 2 },
+  { label: '装修工人', value: '装修', cls: 3 },
+  { label: '电工', value: '电工', cls: 3 },
+  { label: '焊工', value: '焊工', cls: 3 },
+  { label: '货车司机', value: '货车司机', cls: 4 },
+  { label: '挖掘机司机', value: '挖掘机', cls: 4 },
+  { label: '建筑工人', value: '建筑工人', cls: 4 },
+  { label: '井下作业人员', value: '井下', cls: 5 },
+  { label: '钻井工人', value: '钻井', cls: 5 },
+  { label: '矿工', value: '矿工', cls: 6 },
+  { label: '高空作业人员', value: '高空作业', cls: 6 },
+];
+
+const SOCIAL_INSURANCE_OPTIONS = [
+  { label: '无社保', value: 'none' },
+  { label: '职工社保', value: 'employee' },
+  { label: '居民医保', value: 'resident' },
+  { label: '新农合', value: 'new_rural' },
+];
+
+const POLICY_TYPE_OPTIONS = ['医疗险', '意外险', '重疾险', '定期寿险', '防癌险', '年金险']
+  .map((t) => ({ label: t, value: t }));
+
 const STEP_FIELDS = [
   ['age', 'gender', 'life_stage', 'family_burden'],
-  ['job_class', 'existing_coverage'],
+  ['job_class', 'occupation_name', 'social_insurance', 'existing_coverage', 'existing_policies'],
   ['health_status', 'health_issues'],
 ] as const;
 
@@ -176,7 +214,10 @@ export default function HomePage() {
       life_stage: profile.life_stage,
       family_burden: profile.family_burden,
       job_class: typeof profile.job_class === 'number' ? profile.job_class : undefined,
+      occupation_name: typeof profile.occupation_name === 'string' ? profile.occupation_name : undefined,
+      social_insurance: typeof profile.social_insurance === 'string' ? profile.social_insurance : undefined,
       existing_coverage: Array.isArray(profile.existing_coverage) ? profile.existing_coverage : [],
+      existing_policies: Array.isArray(profile.existing_policies) ? profile.existing_policies : [],
       health_status: profile.health_status,
       health_issues: Array.isArray(profile.health_issues) ? profile.health_issues : [],
       preferred_companies: Array.isArray(profile.preferred_companies) ? profile.preferred_companies : [],
@@ -239,12 +280,16 @@ export default function HomePage() {
         age: values.age as number,
         gender: values.gender as 'male' | 'female',
         annual_income: income,
-        job_class: values.job_class as number,
+        // 显式等级优先；未选等级时仅传职业名称由后端解析
+        job_class: (values.job_class as number | undefined) ?? undefined,
+        occupation_name: (values.occupation_name as string | undefined) || undefined,
+        social_insurance: (values.social_insurance as UserProfile['social_insurance']) || 'none',
         life_stage: values.life_stage as string,
         family_burden: values.family_burden as string,
         health_status: values.health_status as string,
         health_issues: (values.health_issues as string[]) || [],
         existing_coverage: (values.existing_coverage as string[]) || [],
+        existing_policies: (values.existing_policies as ExistingPolicy[] | undefined) || [],
         preferred_type: (values.preferred_type as string) || undefined,
         budget_ratio: budgetRatio,
         preferred_companies: dbCompanies,
@@ -276,7 +321,7 @@ export default function HomePage() {
       <Form form={form} layout="vertical"
         initialValues={{
           gender: 'male', life_stage: 'single', family_burden: 'none',
-          health_status: 'standard', job_class: 2,
+          health_status: 'standard', social_insurance: 'none',
         }}>
         {/* Step 0: Basic info */}
         <div style={{ display: step === 0 ? 'block' : 'none' }}>
@@ -317,17 +362,81 @@ export default function HomePage() {
               min={10000} max={10000000} step={10000} style={{ width: '100%' }}
               formatter={(v) => `¥ ${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} />
           </Form.Item>
-          <Form.Item name="job_class" label="职业类别" rules={[{ required: true, message: '请选择职业类别' }]}>
-            <Select options={[
-              { label: '1类（低风险·室内办公）', value: 1 }, { label: '2类（较轻·外勤文职）', value: 2 },
-              { label: '3类（一般·轻体力劳动）', value: 3 }, { label: '4类（中等·制造业）', value: 4 },
-              { label: '5类（较高·建筑运输）', value: 5 }, { label: '6类（高风险·高空矿下）', value: 6 },
-            ]} placeholder="选择职业风险等级" />
+          <Row gutter={16}>
+            <Col xs={24} sm={12}>
+              <Form.Item name="occupation_name" label={
+                <span>职业名称 <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>（选常见职业自动带出等级，也可直接输入）</Text></span>
+              }>
+                <AutoComplete
+                  options={OCCUPATION_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+                  placeholder="如：程序员、外卖、矿工…"
+                  filterOption={(input, option) =>
+                    (option?.value as string || '').includes(input) ||
+                    (option?.label as string || '').includes(input)
+                  }
+                  onChange={(value) => {
+                    const matched = OCCUPATION_OPTIONS.find((o) => o.value === value);
+                    if (matched) {
+                      form.setFieldValue('job_class', matched.cls);
+                    }
+                  }}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item name="job_class" label="职业类别"
+                dependencies={['occupation_name']}
+                rules={[{
+                  validator: (_, value) => {
+                    if (value || form.getFieldValue('occupation_name')) return Promise.resolve();
+                    return Promise.reject(new Error('请手动选择职业类别，或填写职业名称'));
+                  },
+                }]}>
+                <Select allowClear options={[
+                  { label: '1类（低风险·室内办公）', value: 1 }, { label: '2类（较轻·外勤文职）', value: 2 },
+                  { label: '3类（一般·轻体力劳动）', value: 3 }, { label: '4类（中等·制造业）', value: 4 },
+                  { label: '5类（较高·建筑运输）', value: 5 }, { label: '6类（高风险·高空矿下）', value: 6 },
+                ]} placeholder="可留空，按职业自动识别" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name="social_insurance" label="社保身份">
+            <Radio.Group options={SOCIAL_INSURANCE_OPTIONS} optionType="button" />
           </Form.Item>
           <Form.Item name="existing_coverage" label="已有保障">
             <Checkbox.Group options={[
               { label: '社保', value: 'social' }, { label: '已有商业保险', value: 'commercial' },
             ]} />
+          </Form.Item>
+          <Form.Item label={
+            <span>已有商业保单明细 <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>（可选：用于保额缺口分析，保额单位元）</Text></span>
+          }>
+            <Form.List name="existing_policies">
+              {(fields, { add, remove }) => (
+                <>
+                  {fields.map((field) => (
+                    <Space key={field.key} align="baseline" style={{ display: 'flex', marginBottom: 4 }}>
+                      <Form.Item name={[field.name, 'type']} noStyle
+                        rules={[{ required: true, message: '选择险种' }]}>
+                        <Select options={POLICY_TYPE_OPTIONS} placeholder="险种" style={{ width: 130 }} />
+                      </Form.Item>
+                      <Form.Item name={[field.name, 'sum_insured']} noStyle>
+                        <InputNumber min={0} step={10000} placeholder="保额（元）" style={{ width: 150 }}
+                          formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} />
+                      </Form.Item>
+                      <Form.Item name={[field.name, 'annual_premium']} noStyle>
+                        <InputNumber min={0} placeholder="年保费（元，选填）" style={{ width: 160 }}
+                          formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} />
+                      </Form.Item>
+                      <MinusCircleOutlined onClick={() => remove(field.name)} />
+                    </Space>
+                  ))}
+                  <Button type="dashed" onClick={() => add({ type: undefined, sum_insured: undefined, annual_premium: undefined })} icon={<PlusOutlined />} style={{ width: '100%' }}>
+                    添加已有保单
+                  </Button>
+                </>
+              )}
+            </Form.List>
           </Form.Item>
           <Form.Item label={`预算占比：${(budgetRatio * 100).toFixed(0)}%（≈ ¥${(income * budgetRatio).toLocaleString()}/年）`}>
             <Slider min={3} max={10} step={0.5} value={budgetRatio * 100}

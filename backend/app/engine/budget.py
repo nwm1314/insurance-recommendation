@@ -57,3 +57,36 @@ def calculate_sum_insured(user: UserProfile) -> SumInsuredAdvice:
         life=round(life),
         cancer=config.get("cancer_default", 150000),
     )
+
+
+def calculate_coverage_gaps(user: UserProfile, advice: SumInsuredAdvice) -> dict[str, dict]:
+    """已有保单参与缺口分析（REC-001，仅软层展示，不硬性排除）。
+
+    返回 {险种: {"suggested": 建议保额(元), "existing": 同险种已有保额合计(元),
+    "gap": max(0, suggested - existing)}}。未披露保额（null）按 0 计入，
+    gap 不会为负——已有保额超出建议时不产生"负缺口"。
+    """
+    suggested_map = {
+        "医疗险": advice.medical,
+        "意外险": advice.accident,
+        "重疾险": advice.critical_illness,
+        "定期寿险": advice.life,
+        "防癌险": advice.cancer,
+    }
+    existing_by_type: dict[str, float] = {}
+    for policy in user.existing_policies or []:
+        if not isinstance(policy, dict):
+            continue
+        policy_type = (policy.get("type") or "").strip()
+        if not policy_type:
+            continue
+        amount = policy.get("sum_insured") or 0
+        existing_by_type[policy_type] = existing_by_type.get(policy_type, 0) + amount
+    return {
+        insurance_type: {
+            "suggested": suggested,
+            "existing": round(existing_by_type.get(insurance_type, 0)),
+            "gap": round(max(0, suggested - existing_by_type.get(insurance_type, 0))),
+        }
+        for insurance_type, suggested in suggested_map.items()
+    }

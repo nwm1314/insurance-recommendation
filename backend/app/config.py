@@ -248,6 +248,9 @@ settings = Settings()
 # Load adjustable params from YAML
 SCORING_WEIGHTS = _load_yaml("scoring_weights.yaml")
 BUDGET_RULES = _load_yaml("budget_rules.yaml")
+# REC-001：职业关键词 → 等级映射（occupations.yaml 缺失时引擎回退空映射，
+# occupation_name 解析不到即返回 None，走 422 流程）
+OCCUPATIONS = _load_yaml("occupations.yaml")
 
 # DATA-002：引擎/规则版本元数据。规则矩阵或评分权重变更时需手动递增对应
 # 版本，使历史推荐结果可按 meta 复现。
