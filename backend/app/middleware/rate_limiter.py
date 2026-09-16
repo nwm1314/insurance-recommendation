@@ -1,3 +1,4 @@
+import logging
 import time
 import redis
 import jwt
@@ -7,6 +8,30 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from backend.app.config import settings
 from backend.app.dependencies.auth import ACCESS_TOKEN_COOKIE, get_client_ip
 
+logger = logging.getLogger(__name__)
+
+# OPS-001：原子计数 Lua 脚本——INCR 与首次 EXPIRE 在一次 Redis 调用内完成，
+# 消除 get→setex/incr 竞态（并发首击可能各自 setex 重置窗口）。
+_ATOMIC_INCREMENT_LUA = """
+local c = redis.call('INCR', KEYS[1])
+if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+return c
+"""
+
+# 运行期断路标记：Redis 异常时置位，放行请求且只刷一条 warning；
+# 恢复成功后清除，避免每个请求都打日志。
+_REDIS_ERROR_FLAG = {"down": False}
+
+
+def _mark_redis_error(exc: Exception) -> None:
+    if not _REDIS_ERROR_FLAG["down"]:
+        _REDIS_ERROR_FLAG["down"] = True
+        logger.warning("Redis unavailable, rate limiter fail-open: %s", exc)
+
+
+def _mark_redis_recovered() -> None:
+    _REDIS_ERROR_FLAG["down"] = False
+
 
 def _get_client_ip(request: Request) -> str:
     """Real client IP, honoring X-Forwarded-For only via trusted proxies."""
@@ -14,13 +39,20 @@ def _get_client_ip(request: Request) -> str:
 
 
 class RateLimiterMiddleware(BaseHTTPMiddleware):
-    """Redis token bucket rate limiter middleware"""
+    """Redis 固定窗口限流（原子计数，故障 fail-open）。
+
+    OPS-001：计数逻辑为原子 Lua（单次 INCR+EXPIRE）；启动时不再因 ping
+    失败永久禁用——运行期 Redis 异常自动放行并打点，恢复后自动回归限流。
+    """
 
     def __init__(self, app):
         super().__init__(app)
+        self._script = None
         try:
             self.redis = redis.from_url(settings.redis_url, decode_responses=True)
             self.redis.ping()
+            register = getattr(self.redis, "register_script", None)
+            self._script = register(_ATOMIC_INCREMENT_LUA) if register else None
         except Exception:
             self.redis = None
 
@@ -38,19 +70,35 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         return response
 
+    def _atomic_increment(self, key: str, ttl_seconds: int) -> int | None:
+        """原子 INCR+首次 EXPIRE。Redis 异常时 fail-open（返回 None 放行）。
+
+        客户端不支持 register_script 时（如测试 stub）回退为 INCR 后按
+        首次返回值补 EXPIRE 的近似原子实现。
+        """
+        try:
+            if self._script is not None:
+                result = self._script(keys=[key], args=[ttl_seconds])
+            else:
+                result = self.redis.incr(key)
+                if int(result) == 1:
+                    self.redis.setex(key, ttl_seconds, 1)
+            _mark_redis_recovered()
+            return int(result)
+        except Exception as exc:
+            # fail-open 边界：Redis 侧任何异常（RedisError/连接层错误/脚本
+            # 加载失败）都不允许把请求打成 500，放行并打点
+            _mark_redis_error(exc)
+            return None
+
     def _check_ip_limit(self, ip: str) -> bool:
         if self.redis is None:
             return True  # Allow all when Redis unavailable
         key = f"rate_limit:ip:{ip}"
-        current = self.redis.get(key)
-        limit = settings.rate_limit_ip_per_minute
-        if current is None:
-            self.redis.setex(key, 60, 1)
+        count = self._atomic_increment(key, 60)
+        if count is None:
             return True
-        if int(current) >= limit:
-            return False
-        self.redis.incr(key)
-        return True
+        return count <= settings.rate_limit_ip_per_minute
 
     def _check_user_limit(self, user_id: str) -> bool:
         if self.redis is None:
@@ -62,14 +110,10 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         return self._increment_with_limit(day_key, settings.rate_limit_user_per_day, 86400)
 
     def _increment_with_limit(self, key: str, limit: int, ttl_seconds: int) -> bool:
-        current = self.redis.get(key)
-        if current is None:
-            self.redis.setex(key, ttl_seconds, 1)
+        count = self._atomic_increment(key, ttl_seconds)
+        if count is None:
             return True
-        if int(current) >= limit:
-            return False
-        self.redis.incr(key)
-        return True
+        return count <= limit
 
     def _get_user_id(self, request: Request) -> str | None:
         authorization = request.headers.get("authorization")

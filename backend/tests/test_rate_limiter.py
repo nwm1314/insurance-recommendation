@@ -237,3 +237,69 @@ def test_auth_cookie_secure_flag_from_settings(monkeypatch):
     response = Response()
     _set_auth_cookies(response, "access-token-value", "refresh-token-value")
     assert "Secure" not in response.headers["set-cookie"]
+
+
+def test_rate_limit_uses_single_atomic_increment_per_check(monkeypatch):
+    """OPS-001：限流计数每次检查只发生一次原子 INCR（get+incr 两步竞态消除）。"""
+    class CallCountingRedis(StubRedis):
+        def __init__(self):
+            super().__init__()
+            self.incr_calls = 0
+            self.get_calls = 0
+
+        def get(self, key):
+            self.get_calls += 1
+            return super().get(key)
+
+        def incr(self, key):
+            self.incr_calls += 1
+            return super().incr(key)
+
+    class ScriptlessRedis(CallCountingRedis):
+        """无 register_script 的客户端（回退路径：incr + 首次 setex）。"""
+
+    app = _make_app()
+    middleware = RateLimiterMiddleware(app)
+    middleware.redis = ScriptlessRedis()
+    middleware._script = None
+    monkeypatch.setattr(settings, "rate_limit_ip_per_minute", 3)
+
+    # _check_ip_limit 是同步方法，直接串行调用 5 次
+    results = [middleware._check_ip_limit("1.2.3.4") for _ in range(5)]
+    assert results == [True, True, True, False, False], "超过 limit=3 后必须拒绝"
+    assert middleware.redis.incr_calls == 5, "每次检查恰好一次 INCR（原子）"
+    assert middleware.redis.get_calls == 0, "限流路径不得使用非原子的 get 预读"
+
+
+def test_rate_limiter_fail_open_on_runtime_redis_error(monkeypatch, caplog):
+    """OPS-001：Redis 运行期异常 → 请求放行（非 500），warning 仅一条。"""
+    import logging
+
+    class BrokenRedis:
+        def ping(self):
+            return True
+
+        def register_script(self, lua):
+            def run(keys, args):
+                raise ConnectionError("redis down mid-flight")
+            return run
+
+    app = _make_app()
+    middleware = RateLimiterMiddleware(app)
+    middleware.redis = BrokenRedis()
+    middleware._script = middleware.redis.register_script("")
+
+    rate_limiter_module._REDIS_ERROR_FLAG["down"] = False
+    with caplog.at_level(logging.WARNING, logger="backend.app.middleware.rate_limiter"):
+        allowed = middleware._check_ip_limit("9.9.9.9")
+    assert allowed is True, "Redis 故障必须 fail-open 放行"
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1, "断路期间 warning 只应记录一次"
+    assert rate_limiter_module._REDIS_ERROR_FLAG["down"] is True
+    # 恢复：换回正常计数客户端后，flag 应被清除并恢复限流
+    middleware.redis = StubRedis()
+    middleware._script = None
+    monkeypatch.setattr(settings, "rate_limit_ip_per_minute", 120)
+    allowed = middleware._check_ip_limit("9.9.9.9")
+    assert allowed is True
+    assert rate_limiter_module._REDIS_ERROR_FLAG["down"] is False, "恢复成功后应清除故障标记"
