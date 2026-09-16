@@ -67,6 +67,10 @@ class ComboPackage:
     completeness_score: float = 0.0
     coverage_gap_notes: list[str] = field(default_factory=list)
     products: list[ScoredProduct] = field(default_factory=list)
+    # REC-004：按 required 险种的保额缺口（单位元）
+    # 元素：{"type", "suggested", "covered", "gap", "note"?}——note 标注
+    # "保额未披露"（产品 sum_insured 未知时 covered 按 0 计）
+    coverage_gaps: list[dict] = field(default_factory=list)
 
 
 @dataclass

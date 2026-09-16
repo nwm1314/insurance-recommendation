@@ -83,6 +83,8 @@ export interface ComboPackage {
   completeness_score: number;
   coverage_gap_notes: string[];
   products: ProductItem[];
+  // REC-004：按 required 险种的保额缺口（单位元）；历史记录可能缺省
+  coverage_gaps?: Array<{ type: string; suggested: number; covered: number; gap: number; note?: string }>;
 }
 
 export interface RecognizedHealthCondition {

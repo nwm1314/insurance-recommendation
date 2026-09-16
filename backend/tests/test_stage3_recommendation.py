@@ -27,7 +27,7 @@ from backend.app.config import normalize_llm_base_url
 from backend.app.engine.budget import calculate_budget
 from backend.app.engine.budget import calculate_sum_insured
 from backend.app.engine.combo_builder import build_combos
-from backend.app.engine.models import BudgetAnalysis, UserProfile
+from backend.app.engine.models import BudgetAnalysis, SumInsuredAdvice, UserProfile
 from backend.app.engine.models import ScoredProduct
 from backend.app.engine.rule_engine import filter_candidate_pool_with_reasons, get_allowed_types
 from backend.app.engine.scoring import DEFAULT_TYPE_WEIGHTS, _type_weights, validate_scoring_weights_on_startup, validate_type_weights
@@ -56,6 +56,10 @@ def _clear_products():
         db.query(Rule).delete()
         db.query(Product).delete()
         db.commit()
+    except Exception:
+        # 全新临时库可能尚未建表（client fixture 未实例化时 init_db 未跑），
+        # 清理失败不影响纯单元测试
+        db.rollback()
     finally:
         db.close()
 def _seed_products():
@@ -292,10 +296,11 @@ def test_stage3_scoring_budget_and_ai_invariants():
 
     adult = UserProfile(age=32, gender="male", annual_income=200000, job_class=2, life_stage="married_with_kids", family_burden="dual", health_status="standard")
     budget = BudgetAnalysis(annual_income=200000, total_budget=16000, allocation={})
+    advice = SumInsuredAdvice(medical=3000000, accident=1600000, critical_illness=900000, life=1000000, cancer=150000)
     combos = build_combos([
         {"product_id": 1, "name": "医疗A", "company": "A", "type": "医疗险", "premium": 800, "sum_insured": 300, "score": 80, "score_detail": {}, "risk_warnings": []},
         {"product_id": 2, "name": "意外A", "company": "A", "type": "意外险", "premium": 200, "sum_insured": 100, "score": 70, "score_detail": {}, "risk_warnings": []},
-    ], adult, budget)
+    ], adult, budget, advice)
     assert combos
     assert combos[0].budget_utilization > 0
     assert combos[0].completeness_score < 1
@@ -361,6 +366,93 @@ def test_invalid_scoring_weight_config_can_fail_fast(monkeypatch):
     finally:
         monkeypatch.setattr(scoring, "SCORING_WEIGHTS", original)
         monkeypatch.setattr(scoring.settings, "scoring_weights_fail_fast", False)
+
+
+def test_combo_swap_in_missing_required_and_coverage_gaps():
+    """REC-004：premium 套餐中防癌（supplement）挤占重疾预算 → 经一次置换
+    换回重疾（completeness 0.75→1.0）；star 套餐中置换会以定寿为 victim，
+    但替换后 completeness 不提升 → 不置换；coverage_gaps 数值正确。"""
+    from backend.app.engine.combo_builder import build_combos
+    from backend.app.engine.models import BudgetAnalysis, SumInsuredAdvice, UserProfile
+
+    user = UserProfile(
+        age=30, gender="male", annual_income=120000, job_class=1,
+        life_stage="married", family_burden="dual", health_status="standard",
+    )
+    budget = BudgetAnalysis(annual_income=120000, total_budget=6000, allocation={})
+    advice = SumInsuredAdvice(
+        medical=3000000, accident=960000, critical_illness=660000, life=600000, cancer=150000,
+    )
+    scored = [
+        {"product_id": 1, "name": "贵医疗", "company": "A", "type": "医疗险", "premium": 2200,
+         "premium_known": True, "premium_max": 2200, "sum_insured": 300, "score": 90, "score_detail": {}},
+        {"product_id": 2, "name": "便宜医疗", "company": "B", "type": "医疗险", "premium": 300,
+         "premium_known": True, "premium_max": 300, "sum_insured": 200, "score": 60, "score_detail": {}},
+        {"product_id": 3, "name": "意外A", "company": "B", "type": "意外险", "premium": 150,
+         "premium_known": True, "premium_max": 150, "sum_insured": 50, "score": 70, "score_detail": {}},
+        # 重疾贵：premium 总预算内 2350+3800=6150 超限 → 被跳过（触发缺失）
+        {"product_id": 4, "name": "重疾贵", "company": "C", "type": "重疾险", "premium": 3800,
+         "premium_known": True, "premium_max": 3800, "sum_insured": 60, "score": 80, "score_detail": {}},
+        # 重疾便宜：置换 pass 的合格候选
+        {"product_id": 7, "name": "重疾便宜", "company": "C", "type": "重疾险", "premium": 2200,
+         "premium_known": True, "premium_max": 2200, "sum_insured": 40, "score": 55, "score_detail": {}},
+        {"product_id": 5, "name": "定寿X", "company": "D", "type": "定期寿险", "premium": 400,
+         "premium_known": True, "premium_max": 400, "sum_insured": 100, "score": 60, "score_detail": {}},
+        # 防癌 supplement（premium 套餐专属）先被选入 → 置换 victim（分值最低）
+        {"product_id": 6, "name": "防癌便宜", "company": "E", "type": "防癌险", "premium": 800,
+         "premium_known": True, "premium_max": 800, "sum_insured": 15, "score": 50, "score_detail": {}},
+    ]
+    packages = build_combos(scored, user, budget, advice)
+    by_tag = {p.tag: p for p in packages}
+
+    # budget 套餐（cheapest）：重疾便宜 2200 在 3000 上限内直接入选，
+    # coverage_gaps 按万→元口径输出
+    assert "budget" in by_tag
+    budget_gaps = {g["type"]: g for g in by_tag["budget"].coverage_gaps}
+    assert budget_gaps["重疾险"]["suggested"] == 660000
+    assert budget_gaps["重疾险"]["covered"] == 400000
+    assert budget_gaps["重疾险"]["gap"] == 260000
+
+    # star 套餐（0.8×6000=4800）：重疾环节只试 best_score 最高者（重疾贵
+    # 6150>4800 超限即跳过整类）→ 定寿入选 → missing=[重疾]，但唯一合法
+    # victim 是定寿（required），替换后 completeness 0.75→0.75 不提升 →
+    # 不置换（这正是"completeness 提升才采纳"的约束）
+    star = by_tag["star"]
+    assert "重疾便宜" not in {p.name for p in star.products}
+
+    # premium 套餐（1.0×6000=6000）：贵医疗 2200 + 意外 150 + 定寿 400 +
+    # 防癌 800 = 3550，重疾贵 6150 超限跳过 → missing=[重疾] → 置换防癌
+    # （分值最低、非医疗/意外、非 required）为重疾便宜
+    premium = by_tag["premium"]
+    premium_names = {p.name for p in premium.products}
+    assert "重疾便宜" in premium_names, "防癌挤占重疾时 premium 套餐应经置换包含重疾"
+    assert "防癌便宜" not in premium_names, "被置换的防癌产品应移出套餐"
+    assert premium.total_premium <= 6000, "置换后总价仍须在套餐预算内"
+
+    # coverage_gaps 数值：covered = sum_insured(万) × 10000
+    premium_gaps = {g["type"]: g for g in premium.coverage_gaps}
+    for gap in premium_gaps.values():
+        assert gap["gap"] == max(0, gap["suggested"] - gap["covered"])
+    assert premium_gaps["重疾险"]["covered"] == 400000  # 40 万 → 400000 元
+    assert premium_gaps["重疾险"]["gap"] == 660000 - 400000
+    # 防癌∉required → 不出现在套餐级 coverage_gaps
+    assert "防癌险" not in premium_gaps
+
+
+def test_combo_coverage_gaps_note_when_sum_insured_undisclosed():
+    """REC-004：产品保额未知（null）计 0 并标注"保额未披露"。"""
+    from backend.app.engine.combo_builder import _package_coverage_gaps
+    from backend.app.engine.models import ScoredProduct, SumInsuredAdvice
+
+    product = ScoredProduct(
+        product_id=1, name="无保额重疾", company="A", type="重疾险",
+        premium=1000, sum_insured=0,
+    )
+    advice = SumInsuredAdvice(medical=3000000, accident=100000, critical_illness=500000, life=500000, cancer=150000)
+    gaps = _package_coverage_gaps(["重疾险"], [product], advice)
+    assert gaps[0]["covered"] == 0
+    assert gaps[0]["gap"] == 500000
+    assert gaps[0]["note"] == "保额未披露，缺口按 0 已覆盖估算"
 
 
 def test_price_scoring_rank_percentile_beats_min_max_distortion():

@@ -32,7 +32,12 @@ from backend.app.database import SessionLocal, init_db
 init_db()
 from backend.app.engine.budget import calculate_budget
 from backend.app.engine.combo_builder import build_combos
-from backend.app.engine.models import UserProfile
+from backend.app.engine.models import UserProfile, SumInsuredAdvice
+
+# REC-004：build_combos 需要保额建议以输出套餐级 coverage_gaps；
+# 本文件的测试关注保费区间/预算行为，统一使用中性建议值
+DEFAULT_ADVICE = SumInsuredAdvice(medical=3000000, accident=800000, critical_illness=500000, life=500000, cancer=150000)
+
 from backend.app.engine.rule_engine import (
     budget_fit_for_range,
     filter_candidate_pool_with_profile,
@@ -232,7 +237,7 @@ def test_combo_total_range_equals_sum_of_known_bounds():
         budget = calculate_budget(user)
         products = {p.name: p for p in db.query(Product).all()}
         scored = [_scored_dict(products[n]) for n in ["医疗A", "意外A", "重疾A", "寿险A"]]
-        packages = build_combos(scored, user, budget)
+        packages = build_combos(scored, user, budget, DEFAULT_ADVICE)
         assert packages
         for pkg in packages:
             assert pkg.total_premium == round(sum(p.premium for p in pkg.products), 2)
@@ -254,7 +259,7 @@ def test_combo_never_recommends_plan_whose_max_exceeds_spend():
         budget = calculate_budget(user)
         products = {p.name: p for p in db.query(Product).all()}
         scored = [_scored_dict(products[n]) for n in ["医疗A", "医疗X", "意外A", "重疾A", "寿险A"]]
-        packages = build_combos(scored, user, budget)
+        packages = build_combos(scored, user, budget, DEFAULT_ADVICE)
         assert packages
         for pkg in packages:
             names = {p.name for p in pkg.products}
@@ -278,7 +283,7 @@ def test_combo_unknown_max_sets_total_max_none():
         products["医疗A"].premium_min = 400
         db.commit()
         scored = [_scored_dict(products[n]) for n in ["医疗A", "意外A", "重疾A", "寿险A"]]
-        packages = build_combos(scored, user, budget)
+        packages = build_combos(scored, user, budget, DEFAULT_ADVICE)
         assert packages
         assert "医疗A" in {p.name for pkg in packages for p in pkg.products}
         for pkg in packages:
@@ -299,7 +304,7 @@ def test_combo_lower_bound_shown_when_only_min_available():
             products[name].premium_max = None
         db.commit()
         scored = [_scored_dict(products[n]) for n in ["医疗A", "意外B", "重疾A"]]
-        packages = build_combos(scored, user, budget)
+        packages = build_combos(scored, user, budget, DEFAULT_ADVICE)
         assert packages
         budget_pkg = next(p for p in packages if p.tag == "budget")
         assert budget_pkg.total_premium_max is None
@@ -317,7 +322,7 @@ def test_combo_missing_min_uses_known_max_as_conservative_lower_bound():
         products = {p.name: p for p in db.query(Product).all()}
         scored = [_scored_dict(products[n]) for n in ["医疗A", "意外A", "重疾A", "寿险A"]]
         scored[0]["premium"] = None
-        packages = build_combos(scored, user, budget)
+        packages = build_combos(scored, user, budget, DEFAULT_ADVICE)
         assert packages
         for pkg in packages:
             medical = next((p for p in pkg.products if p.name == "医疗A"), None)
@@ -338,7 +343,7 @@ def test_premium_tag_extra_products_keep_premium_max_and_deductible():
         budget = calculate_budget(user)
         products = {p.name: p for p in db.query(Product).all()}
         scored = [_scored_dict(products[n]) for n in ["医疗A", "医疗B", "意外A", "意外B", "重疾A", "重疾B", "寿险A"]]
-        packages = build_combos(scored, user, budget)
+        packages = build_combos(scored, user, budget, DEFAULT_ADVICE)
         premium_pkg = next(p for p in packages if p.tag == "premium")
         by_name = {p.name: p for p in premium_pkg.products}
         assert {"医疗A", "医疗B", "意外A", "意外B", "重疾A", "重疾B", "寿险A"} <= set(by_name)
@@ -377,7 +382,7 @@ def test_combo_copies_recommendation_reasons_for_primary_and_premium_extras():
             rec, not_rec = reasons_by_name[item["name"]]
             item["recommendation_reasons"] = rec
             item["not_recommended_reasons"] = not_rec
-        packages = build_combos(scored, user, budget)
+        packages = build_combos(scored, user, budget, DEFAULT_ADVICE)
         premium_pkg = next(p for p in packages if p.tag == "premium")
         by_name = {p.name: p for p in premium_pkg.products}
         assert {"医疗A", "医疗B", "意外A", "意外B", "重疾A", "重疾B", "寿险A"} <= set(by_name)
@@ -408,7 +413,7 @@ def test_combo_missing_recommendation_reasons_defaults_to_empty_list():
             item.pop("not_recommended_reasons", None)
         scored[0]["recommendation_reasons"] = None
         scored[0]["not_recommended_reasons"] = None
-        packages = build_combos(scored, user, budget)
+        packages = build_combos(scored, user, budget, DEFAULT_ADVICE)
         assert packages
         premium_pkg = next(p for p in packages if p.tag == "premium")
         extras = [p for p in premium_pkg.products if p.layer == "supplement"]

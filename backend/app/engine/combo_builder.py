@@ -1,4 +1,4 @@
-from backend.app.engine.models import UserProfile, ScoredProduct, ComboPackage, BudgetAnalysis
+from backend.app.engine.models import UserProfile, ScoredProduct, ComboPackage, BudgetAnalysis, SumInsuredAdvice
 from backend.app.engine.rule_engine import get_allowed_types
 from backend.app.config import SCORING_WEIGHTS
 
@@ -58,6 +58,7 @@ def build_combos(
     scored_products: list[dict],
     user: UserProfile,
     budget: BudgetAnalysis,
+    sum_insured_advice: SumInsuredAdvice,
 ) -> list[ComboPackage]:
     allowed_types = get_allowed_types(user)
 
@@ -71,10 +72,145 @@ def build_combos(
 
     combos = []
     for tag, label, budget_mult, strategy in PACKAGE_DEFS:
-        combo = _build_single_combo(products_by_type, allowed_types, budget, tag, label, strategy, user)
+        combo = _build_single_combo(products_by_type, allowed_types, budget, tag, label, strategy, user, sum_insured_advice)
         if combo.products:
             combos.append(combo)
     return combos
+
+
+def _swap_in_missing_required(
+    scored_list: list[ScoredProduct],
+    sorted_pools: dict[str, list[dict]],
+    picked_ids: set[int],
+    required_types: list[str],
+    missing_types: list[str],
+    total: float,
+    total_max: float,
+    unknown_max: bool,
+    max_spend: float,
+) -> tuple[float, float, bool, bool]:
+    """REC-004 一次置换 pass：用缺失 required 类型中最便宜的合格产品替换
+    已选里分值最低且非医疗/意外的产品，仅当替换后 completeness 提升时
+    采纳（否则原样返回）。budget 套餐不调用本函数。
+
+    Returns (total, total_max, unknown_max, swapped)。
+    """
+    if not missing_types:
+        return total, total_max, unknown_max, False
+
+    swappable = [p for p in scored_list if p.type not in ("医疗险", "意外险")]
+    if not swappable:
+        return total, total_max, unknown_max, False
+
+    target_type = missing_types[0]
+    candidates = [
+        c for c in sorted_pools.get(target_type, [])
+        if c.get("product_id") not in picked_ids
+    ]
+    if not candidates:
+        return total, total_max, unknown_max, False
+
+    def _completeness(covered: set[str]) -> float:
+        if not required_types:
+            return 1.0
+        return (len(required_types) - len([t for t in required_types if t not in covered])) / len(required_types)
+
+    victim = min(swappable, key=lambda p: p.score)
+    victim_premium = victim.premium
+    victim_max = victim.premium_max if victim.premium_max is not None else 0
+    covered_before = {p.type for p in scored_list}
+    covered_after = (covered_before - {victim.type}) | {target_type}
+    # 替换后 completeness 提升（victim.type 是 required 时可能互相抵消，
+    # 此时放弃置换）
+    if _completeness(covered_after) <= _completeness(covered_before):
+        return total, total_max, unknown_max, False
+
+    # T 中最便宜的合格产品（满足入场/上限双校验）
+    best: dict | None = None
+    for cand in sorted(candidates, key=lambda c: c.get("premium", float("inf"))):
+        cand_premium = cand.get("premium", 0) or 0
+        cand_max = cand.get("premium_max")
+        if total - victim_premium + cand_premium > max_spend:
+            continue
+        if cand_max is not None and total_max - victim_max + cand_max > max_spend:
+            continue
+        best = cand
+        break
+    if best is None:
+        return total, total_max, unknown_max, False
+
+    best_max = best.get("premium_max")
+    picked_ids.discard(victim.product_id)
+    picked_ids.add(best.get("product_id", 0))
+    scored_list.remove(victim)
+    scored_list.append(ScoredProduct(
+        product_id=best.get("product_id", 0),
+        name=best.get("name", ""),
+        company=best.get("company", ""),
+        type=target_type,
+        premium=best.get("premium", 0) or 0,
+        premium_max=best_max,
+        premium_known=bool(best.get("premium_known", True)),
+        deductible=best.get("deductible"),
+        sum_insured=best.get("sum_insured", 0),
+        source_url=best.get("source_url", ""),
+        source_type=best.get("source_type", ""),
+        official_verified=bool(best.get("official_verified")),
+        dual_source_verified=bool(best.get("dual_source_verified")),
+        third_party_review_url=best.get("third_party_review_url"),
+        third_party_review_title=best.get("third_party_review_title"),
+        last_verified_at=best.get("last_verified_at"),
+        data_stale=bool(best.get("data_stale")),
+        layer=LAYER_MAP.get(target_type, "core"),
+        score=best.get("score", 0),
+        score_detail=best.get("score_detail", {}),
+        risk_warnings=best.get("risk_warnings", []),
+        recommendation_reasons=best.get("recommendation_reasons") or [],
+        not_recommended_reasons=best.get("not_recommended_reasons") or [],
+    ))
+    return total - victim_premium + (best.get("premium", 0) or 0), \
+        total_max - victim_max + (best_max if best_max is not None else 0), \
+        unknown_max or best_max is None, True
+
+
+def _package_coverage_gaps(
+    required_types: list[str],
+    products: list[ScoredProduct],
+    advice: SumInsuredAdvice,
+) -> list[dict]:
+    """REC-004：required 险种逐个输出保额缺口（单位元）。
+
+    产品 sum_insured 单位为万，×10000 与建议值同口径；保额未知（null）计 0
+    并在 note 标注"保额未披露"。
+    """
+    suggested_map = {
+        "医疗险": advice.medical,
+        "意外险": advice.accident,
+        "重疾险": advice.critical_illness,
+        "定期寿险": advice.life,
+        "防癌险": advice.cancer,
+    }
+    gaps: list[dict] = []
+    for ins_type in required_types:
+        suggested = suggested_map.get(ins_type, 0)
+        type_products = [p for p in products if p.type == ins_type]
+        covered = 0
+        undisclosed = False
+        for p in type_products:
+            if p.sum_insured:
+                covered += p.sum_insured * 10000
+            else:
+                undisclosed = True
+        entry: dict = {
+            "type": ins_type,
+            "suggested": round(suggested),
+            "covered": round(covered),
+            "gap": round(max(0, suggested - covered)),
+        }
+        if undisclosed:
+            entry["note"] = "保额未披露，缺口按 0 已覆盖估算"
+        gaps.append(entry)
+    return gaps
 
 
 def _build_single_combo(
@@ -85,6 +221,7 @@ def _build_single_combo(
     label: str,
     strategy: str,
     user: UserProfile,
+    sum_insured_advice: SumInsuredAdvice,
 ) -> ComboPackage:
     max_spend = budget.total_budget * {
         "budget": 0.5, "star": 0.8, "premium": 1.0,
@@ -264,6 +401,23 @@ def _build_single_combo(
     missing_types = [t for t in required_types if t not in covered_types]
     completeness = 1.0 if not required_types else (len(required_types) - len(missing_types)) / len(required_types)
     budget_utilization = total / max(max_spend, 1)
+
+    # REC-004 一次置换 pass（star/premium 套餐，至多一轮）：存在缺失的
+    # required 类型时，用该类型最便宜的合格产品替换已选中分值最低且非
+    # 医疗/意外的产品；completeness 提升才采纳。budget 套餐保持极致性
+    # 价比语义，不做置换。
+    if tag in ("star", "premium") and missing_types:
+        total, total_max, unknown_max, _swapped = _swap_in_missing_required(
+            scored_list, sorted_pools, picked_ids, required_types, missing_types,
+            total, total_max, unknown_max, max_spend,
+        )
+
+    # 最终口径（加补与置换之后重算）
+    ratio = total / budget.annual_income if budget.annual_income > 0 else 0
+    covered_types = {p.type for p in scored_list}
+    missing_types = [t for t in required_types if t not in covered_types]
+    completeness = 1.0 if not required_types else (len(required_types) - len(missing_types)) / len(required_types)
+    budget_utilization = total / max(max_spend, 1)
     # When any included product has no disclosed upper bound, the plan's max
     # total is not verifiable — expose the lower bound only and mark
     # total_premium_max as None so the UI shows "起 / 以核保为准".
@@ -278,6 +432,7 @@ def _build_single_combo(
         completeness_score=round(max(completeness, 0.0), 4),
         coverage_gap_notes=[f"预算或候选池限制，暂未配置{t}" for t in missing_types],
         products=scored_list,
+        coverage_gaps=_package_coverage_gaps(required_types, scored_list, sum_insured_advice),
     )
 
 

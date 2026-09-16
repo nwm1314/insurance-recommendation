@@ -115,8 +115,8 @@ def _run_rule_engine(db: Session, user: UserProfile) -> dict:
     # Step 4: Recalculate price scoring
     scored = apply_price_scoring(scored)
 
-    # Step 5: Build combos
-    packages = build_combos(scored, user, budget)
+    # Step 5: Build combos（REC-004：传入保额建议以输出套餐级保额缺口）
+    packages = build_combos(scored, user, budget, sum_insured)
 
     return {
         "budget": budget,
@@ -417,6 +417,8 @@ def _build_response(user: UserProfile, result: dict, engine_mode: str = "rule") 
                 "budget_utilization": p.budget_utilization,
                 "completeness_score": p.completeness_score,
                 "coverage_gap_notes": p.coverage_gap_notes,
+                # REC-004：按 required 险种的保额缺口（单位元）
+                "coverage_gaps": p.coverage_gaps,
             }
             for p in packages
         ],
