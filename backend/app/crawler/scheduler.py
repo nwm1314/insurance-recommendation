@@ -105,7 +105,15 @@ def register_crawl_jobs() -> None:
 
 
 def init_scheduler() -> None:
-    """Initialize scheduled tasks: periodic crawl of all enabled jobs."""
+    """Initialize scheduled tasks: periodic crawl of all enabled jobs.
+
+    OPS-005：backend 内嵌 APScheduler，必须单副本运行（多副本会重复触发
+    抓取任务）；多副本部署时设 SCHEDULER_DISABLED=true 手动关闭本副本调度。
+    """
+    from backend.app.config import settings
+
+    if settings.scheduler_disabled:
+        return
     if scheduler.running:
         return
     register_crawl_jobs()

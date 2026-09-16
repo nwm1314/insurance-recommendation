@@ -455,6 +455,20 @@ def test_combo_coverage_gaps_note_when_sum_insured_undisclosed():
     assert gaps[0]["note"] == "保额未披露，缺口按 0 已覆盖估算"
 
 
+def test_sqlite_wal_pragma_active():
+    """OPS-005：SQLite 连接启用 WAL 与 busy_timeout。"""
+    from sqlalchemy import text as sql_text
+
+    db = SessionLocal()
+    try:
+        mode = db.execute(sql_text("PRAGMA journal_mode")).scalar()
+        timeout = db.execute(sql_text("PRAGMA busy_timeout")).scalar()
+        assert str(mode).lower() == "wal"
+        assert int(timeout) == 30000
+    finally:
+        db.close()
+
+
 def test_rec005_no_dead_config_and_pref_bonus_neutral():
     """REC-005：yaml 无死配置键；pref_bonus 死代码删除后公司偏好不改变
     同输入评分（历史行为就是被覆盖的死代码）。"""

@@ -118,6 +118,9 @@ class Settings(BaseSettings):
     first_admin_password: str = ""
     disable_scheduler_in_tests: bool = False
     scoring_weights_fail_fast: bool = False
+    # OPS-005：调度单例守卫——backend 内嵌 APScheduler 必须单副本运行；
+    # 多副本部署时在非主副本上设 true 手动关闭调度
+    scheduler_disabled: bool = False
 
     # AI-002：AI 模式每日配额（按用户/匿名 IP 计数）与 narrative 短缓存 TTL。
     # Redis 故障时两者均 fail-open（跳过缓存与配额，AI 模式仍可用）。

@@ -121,6 +121,8 @@ docker compose exec backend python scripts/seed.py
 - 前端: http://localhost
 - 后端 API 文档: http://localhost:8000/docs
 
+> **单副本要求**：backend 内嵌 APScheduler（定时抓取调度），必须以单副本运行；多副本部署时在非主副本上设置 `SCHEDULER_DISABLED=true` 关闭调度，避免重复触发抓取任务。
+
 ### 手动启动
 
 ```bash

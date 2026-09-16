@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from backend.app.models.product import Product
 from backend.app.models.rule import Rule
 from backend.app.engine.models import UserProfile
@@ -260,7 +260,10 @@ def filter_candidate_pool_with_reasons(db: Session, user: UserProfile) -> tuple[
     candidates: list[Product] = []
     rejected: list[dict] = []
 
-    products = db.query(Product).all()
+    # OPS-005：joinedload 一次取回 rules/benefits，消除逐产品的 N+1 查询
+    products = db.query(Product).options(
+        joinedload(Product.rules), joinedload(Product.benefits)
+    ).all()
 
     for product in products:
         rule = product.rules
@@ -306,9 +309,13 @@ def filter_candidate_pool_with_reasons(db: Session, user: UserProfile) -> tuple[
     return candidates, rejected
 
 
-def assess_product_profile(user: UserProfile, product: Product, rule: Rule) -> dict:
+def assess_product_profile(user: UserProfile, product: Product, rule: Rule, allowed_types: set[str] | None = None) -> dict:
     """Per-product traceable profile assessment: which rule / which profile field
-    drove the decision, including soft coverage marks and health matching."""
+    drove the decision, including soft coverage marks and health matching.
+
+    OPS-005：allowed_types 由调用方传入（同请求内计算一次），避免逐产品
+    重复计算。
+    """
     health_match = evaluate_health_match(user, rule, product.type)
     coverage = evaluate_coverage_duplicate(user, product.type)
     preferred = normalize_preferred_type(user.preferred_type)
@@ -337,7 +344,7 @@ def assess_product_profile(user: UserProfile, product: Product, rule: Rule) -> d
             "age_group": _get_age_group(user.age),
             "age_allowed": rule.min_age <= user.age <= rule.max_age,
             "job_class_allowed": user.job_class <= rule.job_class_limit,
-            "type_allowed": product.type in get_allowed_types(user),
+            "type_allowed": product.type in (allowed_types if allowed_types is not None else get_allowed_types(user)),
         },
         "traceable_reasons": reasons,
     }
@@ -353,9 +360,11 @@ def filter_candidate_pool_with_profile(
     unknown conditions), coverage marks and preference validity.
     """
     candidates, rejected = filter_candidate_pool_with_reasons(db, user)
+    # OPS-005：allowed_types 只计算一次并传给逐产品评估
+    allowed_types, _discouraged = get_allowed_and_discouraged_types(user)
     assessments = []
     for product in candidates:
-        assessments.append(assess_product_profile(user, product, product.rules))
+        assessments.append(assess_product_profile(user, product, product.rules, allowed_types))
 
     health_analysis = analyze_health_issues(user.health_issues)
     coverage = set(user.existing_coverage or [])
