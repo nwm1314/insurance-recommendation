@@ -1,11 +1,14 @@
+import hashlib
+import json
 import logging
 from datetime import datetime
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException
+import redis as redis_lib
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from backend.app.database import get_db
-from backend.app.dependencies.auth import get_optional_current_user
+from backend.app.dependencies.auth import get_client_ip, get_optional_current_user
 from backend.app.models.auth import User
 from backend.app.config import safe_llm_base_url, settings
 from backend.app.schemas.user_profile import UserProfileRequest
@@ -261,9 +264,46 @@ def _resolve_job_class(request: UserProfileRequest) -> int:
     return resolved
 
 
+def _get_redis():
+    """AI-002：惰性获取 Redis 客户端；不可用时返回 None（fail-open）。"""
+    try:
+        client = redis_lib.from_url(settings.redis_url, decode_responses=True)
+        client.ping()
+        return client
+    except Exception:
+        return None
+
+
+def _ai_quota_identity(request: Request, current_user: User | None) -> str:
+    """配额计数身份：登录用户按 user_id，匿名按 IP。"""
+    if current_user is not None:
+        return f"user:{current_user.id}"
+    return f"ip:{get_client_ip(request)}"
+
+
+def _ai_cache_key(request_payload: dict) -> str:
+    """缓存键 = sha256(canonical profile JSON + ENGINE_VERSION)。"""
+    canonical = json.dumps(request_payload, ensure_ascii=False, sort_keys=True)
+    from backend.app.config import ENGINE_VERSION
+
+    digest = hashlib.sha256((canonical + "|" + ENGINE_VERSION).encode("utf-8")).hexdigest()
+    return f"ai_cache:{digest}"
+
+
+def _check_and_consume_ai_quota(client, identity: str) -> tuple[bool, int]:
+    """原子 INCR 每日配额；返回 (allowed, used)。首次写入设当日 TTL。"""
+    day = utc_now().strftime("%Y%m%d")
+    key = f"ai_quota:{identity}:{day}"
+    used = client.incr(key)
+    if used == 1:
+        client.expire(key, 86400)
+    return used <= settings.ai_daily_limit_per_user, used
+
+
 @router.post("/recommend")
 def recommend(
     request: UserProfileRequest,
+    raw_request: Request,
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_current_user),
 ):
@@ -319,9 +359,44 @@ def recommend(
     pool_by_type: dict[str, list[dict]] = {}
     for p in sorted(result["scored"], key=lambda x: x.get("score", 0), reverse=True):
         pool_by_type.setdefault(p["type"], [])
-        if len(pool_by_type[p["type"]]) < 3:
+        if len(pool_by_type[p["type"]]) < settings.ai_candidate_pool_size:
             pool_by_type[p["type"]].append(p)
     candidate_pool = [p for plist in pool_by_type.values() for p in plist]
+
+    # AI-002：短缓存与每日配额（Redis 故障一律 fail-open，跳过缓存与配额）
+    try:
+        redis_client = _get_redis()
+    except Exception:
+        redis_client = None
+        logger.warning("AI cache/quota client unavailable; continuing without Redis")
+    cache_key = _ai_cache_key(request.model_dump())
+    if redis_client is not None:
+        try:
+            cached = redis_client.get(cache_key)
+            if cached:
+                cached_data = json.loads(cached)
+                response = _build_response(user, result, engine_mode="ai")
+                response["llm_narrative"] = cached_data.get("narrative")
+                response["ai_explanation"] = cached_data.get("explanation")
+                response["ai_from_cache"] = True
+                if current_user:
+                    save_recommendation_record(db, current_user, request.model_dump(), response)
+                return response
+        except Exception:
+            logger.warning("AI cache read failed; continuing without cache")
+
+    if redis_client is not None:
+        try:
+            identity = _ai_quota_identity(raw_request, current_user)
+            allowed, used = _check_and_consume_ai_quota(redis_client, identity)
+            if not allowed:
+                response = _build_response(user, result, engine_mode="degraded")
+                response["llm_narrative"] = "今日 AI 次数已达上限，已展示极速模式结果；明日可继续使用 AI 模式"
+                if current_user:
+                    save_recommendation_record(db, current_user, request.model_dump(), response)
+                return response
+        except Exception:
+            logger.warning("AI quota check failed; continuing without quota")
 
     ai_result = ai_rerank_sync(user, candidate_pool, packages, result["budget"].total_budget)
 
@@ -335,6 +410,22 @@ def recommend(
         response = _build_response(user, result, engine_mode="ai")
         response["llm_narrative"] = narrative
         response["ai_explanation"] = ai_explanation.model_dump() if ai_explanation else None
+        response["ai_from_cache"] = False
+        if redis_client is not None:
+            try:
+                redis_client.setex(
+                    cache_key,
+                    settings.ai_cache_ttl_seconds,
+                    json.dumps(
+                        {
+                            "narrative": narrative,
+                            "explanation": ai_explanation.model_dump() if ai_explanation else None,
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+            except Exception:
+                logger.warning("AI cache write failed; skipping cache")
     else:
         logger.warning(
             "AI mode degraded: LLM rerank returned no result, falling back to rule engine "

@@ -119,6 +119,13 @@ class Settings(BaseSettings):
     disable_scheduler_in_tests: bool = False
     scoring_weights_fail_fast: bool = False
 
+    # AI-002：AI 模式每日配额（按用户/匿名 IP 计数）与 narrative 短缓存 TTL。
+    # Redis 故障时两者均 fail-open（跳过缓存与配额，AI 模式仍可用）。
+    ai_daily_limit_per_user: int = 20
+    ai_cache_ttl_seconds: int = 3600
+    # AI-003：AI 精排候选池每险种取前 N 个（默认 5）
+    ai_candidate_pool_size: int = 5
+
     llm_api_key: str = ""
     llm_base_url: str = "https://api.deepseek.com/v1"
     llm_model: str = "deepseek-v4-flash"
@@ -251,7 +258,6 @@ BUDGET_RULES = _load_yaml("budget_rules.yaml")
 # REC-001：职业关键词 → 等级映射（occupations.yaml 缺失时引擎回退空映射，
 # occupation_name 解析不到即返回 None，走 422 流程）
 OCCUPATIONS = _load_yaml("occupations.yaml")
-
 # DATA-002：引擎/规则版本元数据。规则矩阵或评分权重变更时需手动递增对应
 # 版本，使历史推荐结果可按 meta 复现。
 ENGINE_VERSION = "1.1.0"

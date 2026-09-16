@@ -491,6 +491,182 @@ def test_rec005_no_dead_config_and_pref_bonus_neutral():
     assert base == with_pref, "公司偏好不得改变 score_product 结果（唯一生效点在 combo_builder）"
 
 
+def test_ai_cache_hit_avoids_second_llm_call(client, monkeypatch):
+    """AI-002：缓存命中时不再调用 LLM（ai_rerank_sync 仅被调用一次），
+    响应带 ai_from_cache=true。"""
+    from backend.main import app
+    from backend.app.engine.ai_engine import AIRecommendationExplanation
+
+    class StubRedis:
+        def __init__(self):
+            self.data = {}
+
+        def ping(self):
+            return True
+
+        def get(self, key):
+            return self.data.get(key)
+
+        def setex(self, key, ttl, value):
+            self.data[key] = value
+
+        def incr(self, key):
+            self.data[key] = str(int(self.data.get(key, "0")) + 1)
+            return int(self.data[key])
+
+        def expire(self, key, ttl):
+            pass
+
+    stub = StubRedis()
+    import backend.app.api.recommend as recommend_module
+    monkeypatch.setattr(recommend_module, "_get_redis", lambda: stub)
+
+    calls = {"n": 0}
+
+    def fake_rerank(user, pool, packages, budget):
+        calls["n"] += 1
+        explanation = AIRecommendationExplanation(
+            selected_product_ids=[],
+            summary="缓存测试摘要",
+            reasoning=[], risk_notes=[], comparison_notes=[],
+        )
+        return "缓存测试叙事", explanation
+
+    monkeypatch.setattr(recommend_module, "ai_rerank_sync", fake_rerank)
+    monkeypatch.setattr(recommend_module.settings, "llm_api_key", "test-key")
+
+    payload = _base_payload()
+    payload["enable_llm_engine"] = True
+    first = client.post("/api/recommend", json=payload)
+    assert first.status_code == 200, first.text
+    assert first.json()["ai_from_cache"] is False
+    assert calls["n"] == 1
+
+    second = client.post("/api/recommend", json=payload)
+    assert second.status_code == 200, second.text
+    assert second.json()["ai_from_cache"] is True, "第二次请求应命中缓存"
+    assert second.json()["llm_narrative"] == "缓存测试叙事"
+    assert calls["n"] == 1, "缓存命中时不得再次调用 LLM"
+
+
+def test_ai_quota_exhausted_degrades_to_rule(client, monkeypatch):
+    """AI-002：配额耗尽 → 降级规则模式并提示，不再调用 LLM。"""
+    import backend.app.api.recommend as recommend_module
+    from backend.app.engine.ai_engine import AIRecommendationExplanation
+
+    class StubRedis:
+        def __init__(self, used):
+            self.used = used
+
+        def ping(self):
+            return True
+
+        def get(self, key):
+            return None
+
+        def setex(self, key, ttl, value):
+            pass
+
+        def incr(self, key):
+            self.used += 1
+            return self.used
+
+        def expire(self, key, ttl):
+            pass
+
+    # 已用满配额：下一次 incr 返回 limit+1
+    stub = StubRedis(used=recommend_module.settings.ai_daily_limit_per_user)
+    monkeypatch.setattr(recommend_module, "_get_redis", lambda: stub)
+
+    def fail_rerank(*args, **kwargs):
+        raise AssertionError("配额耗尽时不得调用 LLM")
+
+    monkeypatch.setattr(recommend_module, "ai_rerank_sync", fail_rerank)
+    monkeypatch.setattr(recommend_module.settings, "llm_api_key", "test-key")
+
+    payload = _base_payload()
+    payload["enable_llm_engine"] = True
+    response = client.post("/api/recommend", json=payload)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["engine_mode"] == "degraded"
+    assert "已达上限" in body["llm_narrative"]
+
+
+def test_ai_mode_survives_redis_failure(client, monkeypatch):
+    """AI-002：Redis 故障时 fail-open——AI 模式仍可用（直接调 LLM）。"""
+    import backend.app.api.recommend as recommend_module
+    from backend.app.engine.ai_engine import AIRecommendationExplanation
+
+    def broken_redis():
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr(recommend_module, "_get_redis", broken_redis)
+    calls = {"n": 0}
+
+    def fake_rerank(user, pool, packages, budget):
+        calls["n"] += 1
+        explanation = AIRecommendationExplanation(
+            selected_product_ids=[], summary="故障兜底", reasoning=[], risk_notes=[], comparison_notes=[],
+        )
+        return "故障兜底叙事", explanation
+
+    monkeypatch.setattr(recommend_module, "ai_rerank_sync", fake_rerank)
+    monkeypatch.setattr(recommend_module.settings, "llm_api_key", "test-key")
+
+    payload = _base_payload()
+    payload["enable_llm_engine"] = True
+    response = client.post("/api/recommend", json=payload)
+    assert response.status_code == 200, response.text
+    assert response.json()["llm_narrative"] == "故障兜底叙事"
+    assert calls["n"] == 1, "Redis 故障时 AI 调用应正常进行"
+
+
+def test_ai_candidate_pool_size_configurable(client, monkeypatch):
+    """AI-003：候选池每险种数量读配置（默认 5）。"""
+    import backend.app.api.recommend as recommend_module
+    from backend.app.engine.ai_engine import AIRecommendationExplanation
+
+    captured = {}
+
+    def fake_rerank(user, pool, packages, budget):
+        captured["pool"] = pool
+        explanation = AIRecommendationExplanation(
+            selected_product_ids=[], summary="池测试", reasoning=[], risk_notes=[], comparison_notes=[],
+        )
+        return "池测试叙事", explanation
+
+    monkeypatch.setattr(recommend_module, "ai_rerank_sync", fake_rerank)
+    monkeypatch.setattr(recommend_module, "_get_redis", lambda: None)
+    monkeypatch.setattr(recommend_module.settings, "llm_api_key", "test-key")
+
+    # 同类型放 7 个产品，配置 top-2 → 池内该类型只出现 2 个
+    monkeypatch.setattr(recommend_module.settings, "ai_candidate_pool_size", 2)
+    from backend.app.models.product import Product
+    from backend.app.models.rule import Rule
+
+    db = SessionLocal()
+    try:
+        for i in range(7):
+            p = Product(name=f"池医疗{i}", company=f"PoolCo{i}", type="医疗险", status=1,
+                        premium_min=500 + i, sum_insured_max=300, source_url=f"https://example.com/pool{i}")
+            db.add(p)
+            db.flush()
+            db.add(Rule(product_id=p.id, min_age=18, max_age=70, job_class_limit=6, waiting_period_days=30))
+        db.commit()
+    finally:
+        db.close()
+
+    payload = _base_payload()
+    payload.update({"age": 30, "enable_llm_engine": True})
+    response = client.post("/api/recommend", json=payload)
+    assert response.status_code == 200, response.text
+    pool_types = {}
+    for item in captured.get("pool", []):
+        pool_types[item["type"]] = pool_types.get(item["type"], 0) + 1
+    assert pool_types.get("医疗险", 0) <= 2, "候选池每险种数量应受配置限制"
+
+
 def test_price_scoring_rank_percentile_beats_min_max_distortion():
     """REC-002：排名百分位——[100, 200, 100000] 价格分单调递减，
     中间产品得 0.5 权重（min-max 旧逻辑会给它接近满分，这是要防的回归）。"""
