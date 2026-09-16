@@ -4,13 +4,14 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 
 
 PRODUCT_TYPES = ["医疗险", "意外险", "重疾险", "定期寿险", "防癌险", "年金险"]
+# DATA-004：不保留泛化别名（如"寿险"）——"终身寿险""两全保险"会被误分到
+# "定期寿险"，导致错误的产品类目进入决策矩阵；无法确认的险种一律置空留人工。
 TYPE_ALIASES = {
     "百万医疗": "医疗险",
     "医疗": "医疗险",
     "意外": "意外险",
     "重疾": "重疾险",
     "重大疾病": "重疾险",
-    "寿险": "定期寿险",
     "定寿": "定期寿险",
     "防癌": "防癌险",
     "年金": "年金险",
@@ -51,7 +52,9 @@ def _normalize_health_requirements(value) -> tuple[Any, bool]:
 class ProductDraftSchema(BaseModel):
     name: str = Field(min_length=1)
     company: str = Field(min_length=1)
-    type: Literal["医疗险", "意外险", "重疾险", "定期寿险", "防癌险", "年金险"]
+    # DATA-004：险种未知（页面无法判断/未命中别名）时保持 None 留人工审核，
+    # 不再兜底"医疗险"——错误的险种归类比缺失更危险（决策矩阵按类目硬过滤）。
+    type: Literal["医疗险", "意外险", "重疾险", "定期寿险", "防癌险", "年金险"] | None = None
     premium_min: float | None = Field(default=None, ge=0)
     premium_max: float | None = Field(default=None, ge=0)
     sum_insured_min: float | None = Field(default=None, ge=0)
@@ -89,7 +92,9 @@ class ProductDraftSchema(BaseModel):
         for key, normalized in TYPE_ALIASES.items():
             if key in raw:
                 return normalized
-        return "医疗险"
+        # DATA-004：未命中枚举与别名（含空值/"终身寿险"等泛化名称）→ None，
+        # 由发布闸（type_unknown）拦截，留人工确认。
+        return None
 
     @field_validator("premium_max", "sum_insured_max")
     @classmethod
@@ -136,12 +141,15 @@ def normalize_and_validate_product(data: dict, base_confidence: float = 0.7) -> 
     prepared = {**data}
     prepared["name"] = prepared.get("name") or "待审核产品"
     prepared["company"] = prepared.get("company") or "待审核"
-    prepared["type"] = prepared.get("type") or "医疗险"
+    # DATA-004：type 缺失不再兜底"医疗险"，交由 schema 归一为 None，
+    # 经 auto_publish 的 type_unknown gate 留人工审核。
     try:
         normalized = ProductDraftSchema.model_validate(prepared).model_dump()
         confidence = base_confidence
     except ValidationError:
-        normalized = ProductDraftSchema.model_validate({**prepared, "type": "医疗险"}).model_dump()
+        # 校验失败（如数值越界）重试时同样不强制改"医疗险"，保留未知险种；
+        # 压低置信度即可（None type 本身会被发布闸二次拦截）。
+        normalized = ProductDraftSchema.model_validate({**prepared, "type": None}).model_dump()
         confidence = min(base_confidence, 0.45)
 
     filled = sum(1 for key in ["name", "company", "type", "premium_min", "sum_insured_max", "source_url"] if normalized.get(key))

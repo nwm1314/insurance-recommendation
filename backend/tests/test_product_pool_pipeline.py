@@ -309,12 +309,26 @@ def test_auto_publish_blocked_for_unstructured_health_requirements():
 
 
 def test_auto_publish_allows_explicit_empty_health_structure():
-    """INS-002：显式 {"exclude": [], "caution": []} 是"页面无健康要求"的确认形态，可自动发布。"""
+    """INS-002：显式 {"exclude": [], "caution": []} 是"页面无健康要求"的明确表达，可自动发布"""
     db = SessionLocal()
     try:
         raw = _raw_document(db, "https://www.huize.com/apps/cps/index/product/detail?prodId=32")
         task = create_extraction_review(db, raw, _draft_data(), confidence=0.9, extractor="llm")
         assert task.status == "approved"
+    finally:
+        db.close()
+
+
+def test_auto_publish_blocked_for_unknown_type():
+    """DATA-004：险种未知（归一为 None）的 LLM 草稿不得自动发布，留人工确认归类。"""
+    db = SessionLocal()
+    try:
+        raw = _raw_document(db, "https://www.huize.com/apps/cps/index/product/detail?prodId=33")
+        task = create_extraction_review(db, raw, _draft_data(type=None), confidence=0.9, extractor="llm")
+        assert task.status == "pending"
+        draft = db.query(ProductDraft).filter(ProductDraft.id == task.product_draft_id).first()
+        should, reason = evaluate_auto_publish(draft, "llm")
+        assert (should, reason) == (False, "type_unknown")
     finally:
         db.close()
 

@@ -132,3 +132,36 @@ def test_sum_insured_wan_values_untouched():
     assert normalized["sum_insured_min"] == 5
     assert normalized["sum_insured_max"] == 300
     assert normalized["sum_insured_unit_normalized"] is False
+
+
+# ------------------------------------------------------------ DATA-004
+
+def test_type_aliases_resolve_known_names():
+    assert normalize_and_validate_product(_base(type="定寿"))[0]["type"] == "定期寿险"
+    assert normalize_and_validate_product(_base(type="重疾"))[0]["type"] == "重疾险"
+    assert normalize_and_validate_product(_base(type="百万医疗"))[0]["type"] == "医疗险"
+
+
+def test_type_unknown_names_become_none_not_medical():
+    """泛化险种名（终身寿险/两全）与未知文本不再误分，保持 None 留人工。"""
+    for unknown in ("终身寿险", "两全保险", "万能险", "至尊保终身计划"):
+        normalized, _ = normalize_and_validate_product(_base(type=unknown))
+        assert normalized["type"] is None, f"{unknown} 不应被归类为 {normalized['type']}"
+
+
+def test_type_missing_becomes_none_not_medical():
+    """type 缺失不再兜底"医疗险"。"""
+    data = _base()
+    data.pop("type")
+    normalized, _ = normalize_and_validate_product(data)
+    assert normalized["type"] is None
+
+
+def test_type_none_keeps_low_confidence():
+    """type 未知时 filled 计数不含 type，confidence 不上浮。"""
+    data = _base()
+    data.pop("type")
+    normalized, confidence = normalize_and_validate_product(data, base_confidence=0.7)
+    assert normalized["type"] is None
+    # 6 个 filled 维度只剩 name/company/premium_min/sum_insured_max/source_url（缺 type）
+    assert confidence < 0.9

@@ -86,6 +86,10 @@ def evaluate_auto_publish(draft: ProductDraft, extractor: str) -> tuple[bool, st
     # null）不得自动发布，防止宽松默认值伪装成真实投保规则进入推荐池。
     if any(data.get(key) is None for key in ("min_age", "max_age", "job_class_limit")):
         return False, "missing_rule_fields"
+    # DATA-004：险种未知（schema 归一为 None）不得自动发布——错误的险种
+    # 归类比缺失更危险，交人工确认归类。
+    if not data.get("type"):
+        return False, "type_unknown"
     if data.get("health_requirements") is None:
         return False, "unknown_health_requirements"
     # INS-002：schema 归一化时发现 health_requirements 是 list（LLM 未按
