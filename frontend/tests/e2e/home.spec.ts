@@ -20,6 +20,8 @@ test.describe('Home Page', () => {
     await page.locator('button:has-text("下一步")').click();
 
     // Step 1: Income & Occupation
-    await expect(page.locator('text=职业类别')).toBeVisible();
+    // 以真实可见的输入控件作为锚点：AntD 的 Form.Item label 在本页布局下盒模型为
+    // 0×0，用 text= 断言 label 会命中不可见元素（DEV-003）。
+    await expect(page.locator('input#occupation_name')).toBeVisible();
   });
 });

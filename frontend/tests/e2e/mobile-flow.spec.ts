@@ -117,9 +117,14 @@ async function fillQuestionnaire(page: Page) {
   await expect(page.locator('text=智能保险推荐').first()).toBeVisible();
   await page.locator('input#age').fill('30');
   await page.locator('button:has-text("下一步")').click();
-  await expect(page.locator('text=职业类别')).toBeVisible();
+  // 第 2 步：职业。STEP_FIELDS[1] 要求 job_class 或 occupation_name 二者其一，
+  // 不填则 handleNext 校验失败、步骤不前进，第 3 步的断言会误判为"不可见"。
+  await expect(page.locator('input#occupation_name')).toBeVisible();
+  await page.locator('input#occupation_name').fill('软件工程师');
   await page.locator('button:has-text("下一步")').click();
-  await expect(page.locator('text=健康状态')).toBeVisible();
+  // 第 3 步：健康。以**真实可见**的单选项为锚点——AntD 的 label 在本页布局下盒
+  // 模型为 0×0，用 text= 断言 label 会命中不可见元素而恒失败（DEV-003）。
+  await expect(page.locator('.ant-radio-button-wrapper', { hasText: '标准体（无异常）' })).toBeVisible();
   await page.locator('button:has-text("下一步")').click();
   await expect(page.locator('button:has-text("开始推荐")')).toBeVisible();
 }
