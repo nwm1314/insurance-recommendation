@@ -11,6 +11,13 @@ os.environ.setdefault(
 )
 os.environ.setdefault("DISABLE_SCHEDULER_IN_TESTS", "true")
 
+# DEV-008：与其它测试文件保持一致，先删除上次运行残留的库文件。否则旧库可能停在
+# 过期的 Alembic 版本上，使 verify_schema_integrity() 在导入期直接报错。
+try:
+    os.remove(os.path.join(tempfile.gettempdir(), "insurance_draft_schema_pytest.db"))
+except OSError:
+    pass
+
 from backend.app.data_ingestion.validators.product_schema import (
     ProductDraftSchema,
     normalize_and_validate_product,

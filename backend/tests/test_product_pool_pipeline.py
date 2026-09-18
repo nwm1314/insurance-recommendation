@@ -67,9 +67,12 @@ def _clean_db(monkeypatch):
         from backend.app.models.benefit import Benefit
         from backend.app.models.rule import Rule
 
+        # DEV-007：SourcePlatform 此前未清理，导致 test_seed_sources_* 等用例在
+        # 同一会话内第二次插入同名平台时触发 UNIQUE(source_platforms.name)。
+        # 各用例均自行（或经 ensure_seed_sources）重建所需来源，故这里一并清空。
         for model in (
             ProductFieldEvidence, ExtractionRun, RawDocument, CrawlRun, CrawlJob,
-            SourcePage, Product, Rule, Benefit, AuditLog,
+            SourcePage, Product, Rule, Benefit, AuditLog, SourcePlatform,
         ):
             db.query(model).delete()
         db.commit()
