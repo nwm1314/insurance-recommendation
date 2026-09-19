@@ -8,13 +8,19 @@ import react from '@vitejs/plugin-react';
 // 抵消路由懒加载收益；自然拆分下入口 470 kB / antd 共享块按需加载，构建无告警。
 const REACT_VENDOR_RE = /node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom|axios)[\\/]|node_modules[\\/]@remix-run[\\/]/;
 
+// The E2E launcher starts the real backend on E2E_BACKEND_PORT (see
+// playwright.config.ts). The proxy must follow that same knob: with a literal
+// 8000 here, shifting the backend port leaves every /api call pointing at an
+// empty port and the suite fails for reasons unrelated to the code under test.
+const BACKEND_PORT = process.env.E2E_BACKEND_PORT || 8000;
+
 export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: `http://localhost:${BACKEND_PORT}`,
         changeOrigin: true,
       },
     },

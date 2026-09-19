@@ -174,6 +174,9 @@ Get-NetTCPConnection -LocalPort 8000 -State Listen | ForEach-Object { Stop-Proce
 ```
 
 也可用环境变量改端口：`$env:E2E_FRONTEND_PORT=3100; $env:E2E_BACKEND_PORT=8100; npx playwright test`。
+偏移是安全的（DEV-009 起）：E2E 预热地址取自解析后的 `use.baseURL`，`/api` 代理目标跟随
+`E2E_BACKEND_PORT`，两者不再各自写死 3000/8000；由 `backend/tests/test_e2e_port_consistency.py`
+锁定。若占用者是**其他项目**正在使用的 dev server，优先偏移端口，不要去结束别人的进程。
 
 **数据库迁移门禁**：应用启动时 `verify_schema_integrity()` 会校验模型与 Alembic 迁移一致。
 若报 `Database schema is at migration 'xxxx' but the current Alembic head is 'yyyy'`，

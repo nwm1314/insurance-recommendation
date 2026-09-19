@@ -128,6 +128,7 @@ AI 短缓存（`ai_cache_ttl_seconds`）写入真实 Redis，键跨 pytest 进�
 | PROD-002 | 产品 | P1 | D | ✅ 已修复（OPEN-002 方案 3 的部署清单硬性卡点已补齐 `5d74866`） | A |
 | PROD-001 | 产品 | P1 | E | ✅ 已按决策闭环（OPEN-001 方案 1 + 局部增强） | 无 |
 | PROD-003 | 产品 | P2 | E | ✅ 已闭环（实测生效，已补回归） | A |
+| DEV-009 | 开发 | P2 | B | ✅ 已修复（收尾轮集成验收中**新发现**：e2e 端口来源不一致） | A, B |
 
 ---
 
@@ -563,19 +564,65 @@ E2E 断言（mock 三档 + 真实后端）与 320/375/1280 三档截图见 `hand
 
 ---
 
+### 收尾轮新增（2026-09-19 集成验收）
+
+#### DEV-009：e2e 端口来源不一致，偏移端口时预热到别的应用、代理打到空端口（**集成验收中新发现**）
+
+| 字段 | 内容 |
+| ---- | ---- |
+| 严重度 | P2（不影响交付正确性，但会让验收结论失真） |
+| 批次 | B（E2E 有效性） |
+| 依赖 | A（须以可信基线判定）、B |
+
+**证据**（本机 3000 被另一项目的 vite dev server 占用，无法释放，只能偏移端口验收）
+
+```
+# 第一次：默认端口
+Error: http://localhost:3000 is already used ... or set reuseExistingServer:true
+
+# 第二次：E2E_FRONTEND_PORT=3110 E2E_BACKEND_PORT=8110 —— 9 failed / 28 passed
+Error: expect(page).toHaveURL(expected) failed
+Expected pattern: /\/account/   Received: "http://localhost:3110/register"
+```
+
+**根因**：端口有三个来源，只有一个是可配置的。
+
+1. `playwright.config.ts` 的前端/后端端口可读 `E2E_FRONTEND_PORT` / `E2E_BACKEND_PORT`；
+2. `tests/e2e/global-setup.ts` 的预热地址**写死** `localhost:3000` → 偏移端口后它预热的是
+   恰好占着 3000 的**另一个应用**，本项目首条用例于是与 dev-server 惰性编译竞争；
+3. `vite.config.ts` 的 `/api` 代理目标**写死** `localhost:8000` → 后端一旦按
+   `E2E_BACKEND_PORT` 偏移，所有 `/api` 请求打到空端口，登录/注册类用例成片失败，
+   失败原因与被测代码无关（上述 9 failed 即此，属**误报**）。
+
+**修复**（消除重复来源，而不是再抄一遍默认值）
+
+- `global-setup.ts` 改为接收 Playwright 解析后的 `FullConfig`，预热地址取
+  `config.projects[0].use.baseURL`——与被测用例同一个来源，端口不可能再对不上；
+  `use.baseURL` 缺失时抛错，不再静默预热未知来源。
+- `vite.config.ts` 的代理目标改为 `` `http://localhost:${BACKEND_PORT}` ``，
+  `BACKEND_PORT = process.env.E2E_BACKEND_PORT || 8000`，与后端 webServer 同源。
+  未设该变量时仍为 8000，本地开发行为不变。
+- 新增内容守卫测试 `backend/tests/test_e2e_port_consistency.py`（3 条）锁住上述三点，
+  禁止这两处再出现字面量 `host:port`。
+
+**验证**：偏移双端口（3110/8110）**不再需要改动任何被跟踪文件**即 `37 passed`；
+全量 `306 passed` / `build exit 0`。变异验证见 handoff §7。
+
+---
+
 ## 4. 状态统计（逐轮更新）
 
 | 状态 | 数量 | 卡 |
 | ---- | ---- | -- |
-| 已完成 | 13 | DEV-001, DEV-002, DEV-003, DEV-004, DEV-005, DEV-006, DEV-007, DEV-008, UX-001, UX-002, PROD-001, PROD-002, PROD-003 |
+| 已完成 | 14 | DEV-001, DEV-002, DEV-003, DEV-004, DEV-005, DEV-006, DEV-007, DEV-008, DEV-009, UX-001, UX-002, PROD-001, PROD-002, PROD-003 |
 | 进行中 | 0 | — |
 | 待办 | 0 | — |
 | 阻塞（待人类决策） | 0 | — （PROD-001 已于 2026-09-19 按 OPEN-001 决策闭环） |
-| **合计** | **13** | — |
+| **合计** | **14** | — |
 
 **P0 总数 4**（DEV-001/002/003/007）—— **全部闭环**。
 **P1 总数 7**（DEV-004/005/008、UX-001/002、PROD-001/002）—— **全部闭环**。
-**P2 总数 2**（DEV-006、PROD-003）—— **全部闭环**。
+**P2 总数 3**（DEV-006、DEV-009、PROD-003）—— **全部闭环**。
 
 > 注 0（修正）：本表此前记为"已完成 11 / 合计 12"，与 §2 卡清单实际 13 张不符
 > （PROD-001 阻塞时已完成项即 12 张）。按实际修正为 13/13，逐轮更新时未复核卡数，
@@ -586,3 +633,5 @@ E2E 断言（mock 三档 + 真实后端）与 320/375/1280 三档截图见 `hand
 > 故判定为闭环、不另开 UI 修复卡。
 > 注 2：DEV-007 / DEV-008 为评审报告产出后、修复过程中**新发现**的缺陷（均属测试隔离类），
 > 已一并闭环并登记在本文件批次 A 章节。
+> 注 3：DEV-009 为**集成验收轮**新发现（原 13 张卡之外的第 14 张），来源是把 E2E 改到偏移
+> 端口验收时暴露的端口来源不一致；此前的两轮均在默认端口 3000/8000 上跑，故未触及该路径。

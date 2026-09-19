@@ -1,9 +1,10 @@
 # 修复交付记录（2026-09-19 三视角评审 → 修复）
 
-> 分支：`codex/three-perspective-remediation`
+> 分支：`codex/three-perspective-remediation`（已于 2026-09-19 快进合并入 `master`，未推送远端）
 > 起点 commit：`20f8fd5`（master）
 > 修复轮终态 commit：`2a1661b`
 > 决策落地轮终态 commit：见 §8（OPEN-001~005 已全部落地）
+> 集成验收轮（DEV-009）：见 §9
 > 执行方式：按 `2026-09-19-autonomous-loop-prompt.md` 多轮推进（评审 → 拆卡 → 逐卡修复 → 收尾 → 决策落地）
 > 本文档记录逐条结论、变更文件、验证命令与真实输出摘要、遗留项。
 
@@ -11,17 +12,17 @@
 
 ## 1. 交付总览
 
-| 项 | 修复前（基线实测） | 修复轮终态 | 决策落地轮终态 |
-| -- | ---- | ---- | ---- |
-| `pytest backend/tests -q` | **10 failed / 270 passed**（Redis 干净时）<br>**38 failed / 242 passed**（Redis 脏时） | **301 passed / 0 failed** | **303 passed / 0 failed**（+OPEN-003 命名回归、+OPEN-002 compose 门禁回归） |
-| `cd frontend; npm run build` | 通过（exit 0） | 通过（exit 0，11.80s） | 通过（exit 0，21.37s） |
-| `cd frontend; npx playwright test` | **6 failed / 29 passed** | **37 passed / 0 failed** | **37 passed / 0 failed**（新增 5 条 OPEN-001 断言，用例数不变） |
+| 项 | 修复前（基线实测） | 修复轮终态 | 决策落地轮终态 | 集成验收轮终态（DEV-009） |
+| -- | ---- | ---- | ---- | ---- |
+| `pytest backend/tests -q` | **10 failed / 270 passed**（Redis 干净时）<br>**38 failed / 242 passed**（Redis 脏时） | **301 passed / 0 failed** | **303 passed / 0 failed**（+OPEN-003 命名回归、+OPEN-002 compose 门禁回归） | **306 passed / 0 failed**（+DEV-009 端口来源守卫 3 条） |
+| `cd frontend; npm run build` | 通过（exit 0） | 通过（exit 0，11.80s） | 通过（exit 0，21.37s） | 通过（exit 0，13.55s） |
+| `cd frontend; npx playwright test` | **6 failed / 29 passed** | **37 passed / 0 failed** | **37 passed / 0 failed**（新增 5 条 OPEN-001 断言，用例数不变） | **37 passed / 0 failed**，且在偏移端口 3110/8110 上跑通、**无需改动任何被跟踪文件** |
 
 **完成标准核对**
 
 - [x] 评审报告中所有 P0 项闭环（4 项，含修复中新发现的 1 项）
 - [x] P1 项闭环（7 项全部闭环；PROD-001 已按 OPEN-001 决策落地，见 §8）
-- [x] `pytest` 全量绿（303 passed；无新增 skip、无断言削弱）
+- [x] `pytest` 全量绿（306 passed；无新增 skip、无断言削弱）
 - [x] `npm run build` 通过
 - [x] `playwright` 全量绿（37 passed）
 - [x] 每个修复都有对应的回归测试或截图证据
@@ -44,6 +45,8 @@
 | `2468596` | OPEN-003: 套餐改为中性功能化命名（低保费优先/均衡配置/高保额优先） |
 | `59a4e99` | OPEN-001: 结果页补「下一步怎么做」说明，并把「起」口径统一到产品卡与对比表 |
 | `5d74866` | OPEN-002: 把推荐记录加密密钥变成部署清单的硬性卡点（补齐 compose 透传缺口） |
+| `4aa9ef6` | docs: 记录 OPEN-001~005 决策落地结果，PROD-001 转为已闭环 |
+| 本次提交 | DEV-009: e2e 端口来源统一（偏移端口验收不再需要改代码） |
 
 ---
 
@@ -63,6 +66,7 @@
 | **DEV-004** | **已修复** | `frontend/src/types/index.ts`<br>`frontend/src/pages/ResultPage.tsx`<br>`backend/tests/test_stage3_recommendation.py`<br>`frontend/tests/e2e/mobile-flow.spec.ts` | 缓存命中时标签改为"AI 精排模式（缓存结果）"+ Tooltip 说明；补声明 `ai_from_cache`（此前后端返回但前端未声明未消费）。新增后端回归 2 条 + E2E 2 条；变异验证：还原旧标签后缓存用例立即失败。**未改变降级语义**（LLM 失败仍降级） | 无 |
 | **PROD-002** | **已修复** | `backend/main.py`<br>`backend/tests/test_ops002_security.py`<br>`docs/docker-deployment.md`<br>`README.md` | 部署文档此前**完全没有** `RECORD_ENCRYPTION_KEY` 章节；现新增「推荐记录加密」章节（生成命令 + 启动校验 + 换钥风险）。`APP_ENV=production` 未配置时升级为 `logger.error`；非生产保持 warning。新增回归 3 条；变异验证有效。**未改变 fail-open**（不拒绝启动） | 无 |
 | **PROD-003** | **已闭环** | `backend/tests/test_product_freshness.py`（新增） | 评审列为待验证假设；本轮反例实证 `data_stale` 真实生效（从未复核 → True；超阈值 → True；刚复核 → False；恰好 90 天 → False）。变异验证：强制 `stale=False` 后用例立即失败 | 无 |
+| **DEV-009** | **已修复**（集成验收轮新发现） | `frontend/tests/e2e/global-setup.ts`<br>`frontend/vite.config.ts`<br>`backend/tests/test_e2e_port_consistency.py`（新增）<br>`README.md` | 根因：E2E 端口有三个来源、只有 `playwright.config.ts` 可配置——warmup 写死 3000、`/api` 代理写死 8000。实测后果：① 偏移前端端口时 warmup 打到占用 3000 的**另一个项目**应用；② 偏移后端端口时 `/api` 全部打空端口，`9 failed`（`expect(page).toHaveURL(/\/account/)` 收到 `/register`），**与被测代码无关的误报**。修复后 warmup 取 `config.projects[0].use.baseURL`、代理取 `process.env.E2E_BACKEND_PORT`，3 条内容守卫测试锁定；`E2E_FRONTEND_PORT=3110 E2E_BACKEND_PORT=8110` 不改任何被跟踪文件即 `37 passed`。变异验证见 §7 | 无（默认端口 3000/8000 路径本轮未重跑，仍被外部项目占用；该路径行为与修复前一致） |
 | **PROD-001** | **已按决策闭环**（修复轮记为"不修（需人类决策）"，人类已于 2026-09-19 拍板 OPEN-001 方案 1 + 局部增强） | `frontend/src/pages/ResultPage.tsx`<br>`frontend/src/components/ProductCard.tsx`<br>`frontend/src/components/CompareTable.tsx`<br>`frontend/tests/e2e/{helpers,mobile-flow,recommend-flow}.spec.ts`<br>`README.md` | 结果页新增「下一步怎么做」卡片（明示辅助决策工具边界 + 三条可行动作），不引入投保跳转/留资；顺带取证并修复「起」口径不一致。详见 §8 OPEN-001 行 | 无（转化链路仍止于外链，属已决策的产品边界，非缺陷） |
 
 ---
@@ -110,15 +114,19 @@
 **复现三条命令**（仓库根目录）：
 
 ```powershell
-./backend/venv/Scripts/python.exe -m pytest backend/tests -q      # 303 passed
+./backend/venv/Scripts/python.exe -m pytest backend/tests -q      # 306 passed
 cd frontend; npm run build                                        # exit 0
 cd frontend; npx playwright test                                  # 37 passed
+# 3000/8000 被占用时（DEV-009 起，无需再改任何被跟踪文件）：
+cd frontend; $env:E2E_FRONTEND_PORT=3110; $env:E2E_BACKEND_PORT=8110; npx playwright test   # 37 passed
 ```
 
 **执行期遇到的两个环境陷阱（已在 README「运行测试」章节记录）**：
 
 1. E2E 端口 3000/8000 被残留 dev server 占用时，Playwright 因 `reuseExistingServer: false`
-   直接失败。处置命令已写入 README。
+   直接失败。处置命令已写入 README。**集成验收轮补记**：占用者若是**其他项目**的 dev server，
+   正确处置是偏移端口而非结束别人的进程；而偏移路径此前不可用（DEV-009，见 §2/§9），
+   当时只能临时改 `global-setup.ts` 才能跑通，本轮已根治。
 2. 本地库停留在旧 Alembic 版本时，启动期 `verify_schema_integrity()` 会报
    `Database schema is at migration ... but the current Alembic head is ...`。
    处置命令（`alembic upgrade head`）已写入 README。本轮已将本机陈旧
@@ -157,6 +165,18 @@ cd frontend; npx playwright test                                  # 37 passed
    fail-open，因此若有人跳过部署清单、或绕过 compose 直接起 uvicorn，仍可能明文落库。
    现有约束力来自：生产 error 日志、两份清单的 `exit 1` 卡点、
    `test_backend_forwards_record_encryption_key` 对 compose/文档的锁定。
+   > **集成验收轮复核（2026-09-19，未改代码）**：核查该风险是否有可修的缺口——结论是
+   > **没有缺陷，行为即已决策语义**：`APP_ENV` 与 `COOKIE_SECURE` 均已在 compose 的
+   > backend `environment:` 段透传（`docker-compose.yml:67-68`，由
+   > `test_backend_forwards_cookie_proxy_and_security_header_vars` 锁定）；生产路径
+   > `APP_ENV=production` + `COOKIE_SECURE=true` 已写入部署清单
+   > （`docs/docker-deployment.md:175-181`），实测该组合可正常构造（`cookie_secure` 推断
+   > 为 True），而 `production` + `COOKIE_SECURE=false` 按设计启动即失败（fail-closed，
+   > 文档 `:262/:341` 已明示）。日志门禁与 `APP_ENV` 无关（warning/error 两支都含
+   > `RECORD_ENCRYPTION_KEY` 字样，`docs/docker-deployment.md:207` 已说明）。
+   > 因此启动日志出现该 warning 是**本地 fail-open 的预期输出**，不是未修项。
+   > 若要改为"生产环境未配密钥即拒绝启动"，属**推翻 OPEN-002 方案 3**，需人类重新拍板，
+   > 本轮不擅自改判。
 
 ---
 
@@ -178,6 +198,8 @@ cd frontend; npx playwright test                                  # 37 passed
 | OPEN-002（compose 透传） | 删除 `RECORD_ENCRYPTION_KEY: ${...}` 那行 → `test_backend_forwards_record_encryption_key` 立即 `1 failed, 3 passed`；还原后 4 passed（真实输出见 §8） |
 | OPEN-003（中性命名） | 把 budget/premium 标签改回"极致性价比/尊享无忧" → 命名回归立即 `1 failed`，报 `assert '🛡 极致性价比' == '🛡 低保费优先'` |
 | OPEN-001（下一步说明） | 删除「下一步怎么做」卡片 → `mobile-flow` 320px 用例立即 `1 failed`（`getByText('下一步怎么做')` 超时），另 2 条通过；还原后全绿 |
+| DEV-009（warmup 端口来源） | 把 `config.projects[0].use.baseURL` 改回写死的 `"http://localhost:3000/"` → `test_e2e_warmup_url_comes_from_resolved_config` 立即 `1 failed, 2 passed` |
+| DEV-009（代理端口来源） | 把代理目标改回 `'http://localhost:8000'` → `test_api_proxy_follows_e2e_backend_port` 立即 `1 failed, 2 passed`；两处均逐字节还原后 `3 passed` |
 
 凡未取得真实输出的条目（第 3 节表格中的 4 条），一律标注"未验证"，未混入已证结论。
 所有变异均在验证后**逐字节还原**（`git status` 确认工作区仅剩预期文档改动）。
@@ -203,3 +225,24 @@ cd frontend; npx playwright test                                  # 37 passed
 改为 `page.getByText('横向对比', { exact: true })`。原因：新增的「下一步怎么做」文案正文
 合法包含"横向对比表"，宽松子串选择器命中 2 个元素触发 strict mode violation（首轮实测
 6 failed）。改为精确匹配卡片标题后断言目标更明确、强度不降，未删除或跳过任何用例。
+
+---
+
+## 9. 集成验收轮记录（DEV-009，2026-09-19）
+
+决策落地完成后做本地集成验收：12 个 commit 快进合并入 `master`（`20f8fd5 → 4aa9ef6`，
+合并树与已验证 commit 逐字节相同），未推送远端。验收中把 E2E 改到偏移端口跑，暴露出
+端口来源不一致，立卡 DEV-009 并修复。
+
+| 项 | 内容 |
+| -- | ---- |
+| 起点 | 工作区本已干净（无未提交改动、无 stash）；"本地所有改动"= 分支上 12 个未推送 commit。其余 3 个 `codex/*` 陈旧分支经 `--cherry-pick` patch-id 比对确认已全在 master 内，无需集成 |
+| 现象 | 默认端口跑 E2E 直接被拒（3000 被 `E:\ai_project\ticket_grabbing_12306` 的 vite 占用，属另一项目，不结束他人进程）；改 `E2E_FRONTEND_PORT=3110 E2E_BACKEND_PORT=8110` 后 `9 failed`，报错形态像业务缺陷（登录后 URL 仍是 `/register`） |
+| 定位 | 非回归。`global-setup.ts` 写死 `localhost:3000`（预热到别的应用）、`vite.config.ts` 的 `/api` 代理写死 `localhost:8000`（后端偏移后全打空端口）。当时为完成验收**临时**把 warmup 改为读 `E2E_FRONTEND_PORT`，跑完 `git checkout --` 还原并确认工作区干净，未把临时改动混进交付 |
+| 修复 | warmup 改取 `config.projects[0].use.baseURL`（与被测用例同一来源，缺失即抛错）；代理目标改 `process.env.E2E_BACKEND_PORT \|\| 8000`；新增守卫测试 3 条；README 补偏移口径 |
+| 验证 | `pytest` **306 passed**（303+3）；`npm run build` **exit 0**（13.55s）；`playwright` 3110/8110 **37 passed** 且**零改动被跟踪文件**——即修复本身的功能证据；变异验证 2 组见 §7，均逐字节还原 |
+| 未验证项 | 默认端口 3000/8000 路径本轮**未重跑**（3000 仍被外部项目占用）。判据：该路径下 `use.baseURL` 解析为 `http://localhost:3000`、`BACKEND_PORT` 取默认 8000，与修复前写字面量时等价；前两轮均在默认端口取得 37 passed |
+| 第 2 项复核 | 上一轮报的"加密告警属清单级非运行时强制"**不是缺陷**，为 OPEN-002 方案 3 的既定语义，`test_ops002_security.py` 3 条 + compose 透传回归锁定，文档亦明示；详见 §6 第 6 条补记。改判需人类重新拍板 |
+
+**本轮 commit**：1 个（DEV-009：3 个源文件/测试文件 + README + 两份任务文档），已快进合并入
+`master`；合并后 `git status` 干净、`git stash list` 为空。
