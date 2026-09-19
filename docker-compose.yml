@@ -38,6 +38,11 @@ services:
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-14}
+      # OPEN-002（方案 3）：推荐记录（画像/结果，含健康描述）的落库加密密钥。留空即
+      # 明文落库——本地开发的显式降级语义，应用不会拒绝启动，但启动日志会输出
+      # PLAINTEXT 告警；对外内测/生产必须配置（门禁步骤见 docs/docker-deployment.md
+      # 的「推荐记录加密」）。必须大写：compose 只插值大写变量名。
+      RECORD_ENCRYPTION_KEY: ${RECORD_ENCRYPTION_KEY:-}
       FIRST_ADMIN_EMAIL: ${FIRST_ADMIN_EMAIL:-admin@example.com}
       FIRST_ADMIN_PASSWORD: ${FIRST_ADMIN_PASSWORD:-}
       DISABLE_SCHEDULER_IN_TESTS: ${DISABLE_SCHEDULER_IN_TESTS:-false}

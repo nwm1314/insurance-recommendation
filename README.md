@@ -226,6 +226,8 @@ Cookie 登录用户计入用户级限流（限流优先解析 Bearer 头，其�
 
 **推荐记录加密与保留**：设置 `RECORD_ENCRYPTION_KEY` 后，推荐记录的画像与结果（含健康描述）以 Fernet 加密落库（任意字符串密钥自动派生）；密钥为空则明文落库并在启动时告警（显式降级，非静默），其中 `APP_ENV=production` 下升级为 **error** 级。由于推荐记录含 `health_status` / `health_issues` 等敏感个人信息，**对外内测与生产部署必须配置该密钥**（配置方式与注意事项见 `docs/docker-deployment.md` 的「推荐记录加密」章节）。加密仅覆盖推荐记录——数据库文件/备份仍需按敏感数据处理。健康信息保留期限以 `RECORD_RETENTION_DAYS`（0=永久）预留，当前版本不实现自动清理任务。
 
+**门禁落地方式（OPEN-002 方案 3）**：本地开发保持明文 fail-open（不拒绝启动）；内测与生产的强制由**部署清单的硬性卡点**承担——`docker-compose.yml` 已透传该变量（`.env` 写了但 compose 段缺失 = 容器读不到，仍会明文落库），`.env.example` 含同名条目，`docs/docker-deployment.md` 的「首次部署测试环境」与「生产部署」两份清单各含一步"启动后 grep 日志、命中 PLAINTEXT 即 `exit 1`"的检查。这三处由 `backend/tests/test_compose_policy.py::test_backend_forwards_record_encryption_key` 锁定，防止退回"只在文档里提示一句"。
+
 ## 已知限制
 
 - **报价口径**：接口返回的 `premium` 为报价区间下限，实际以核保为准；不同产品报价条件（年龄/保额/缴费期）可能不同（响应 `premium_basis_note` 有固定说明）

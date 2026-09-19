@@ -71,6 +71,10 @@ COOKIE_SAMESITE=lax
 TRUST_PROXY_HEADERS=true
 TRUSTED_PROXIES=127.0.0.1,172.16.0.0/12
 SECURITY_HEADERS=true
+# 必检项（OPEN-002）：推荐记录含健康描述等敏感个人信息，内测环境必须有真实用户，
+# 因此该密钥属于内测硬性门禁，留空即明文落库。生成：
+#   python -c "import secrets; print(secrets.token_urlsafe(48))"
+RECORD_ENCRYPTION_KEY=替换为强随机字符串
 ```
 
 > `COOKIE_SECURE`：只有 HTTPS 才设 `true`（浏览器会拒绝非 HTTPS 连接上带 Secure 的 Cookie）；纯 HTTP 内网验证环境保持 `false`。
@@ -102,6 +106,21 @@ curl http://127.0.0.1:18080/healthz
 curl http://127.0.0.1:18080/api/products
 docker compose logs -f backend
 ```
+
+**【硬性卡点 · OPEN-002】推荐记录加密**：内测环境会有真实用户画像，未配置密钥即明文
+落库。上一步骤必须逐字执行下面的检查（可直接放进部署脚本，命中即退出码 1）：
+
+```bash
+if docker compose logs backend | grep -qi "RECORD_ENCRYPTION_KEY"; then
+  echo "FAIL: 推荐记录正在明文落库，请在 .env 配置 RECORD_ENCRYPTION_KEY 后重启"
+  exit 1
+fi
+echo "OK: 启动日志无 PLAINTEXT 告警，推荐记录已加密"
+```
+
+> 检查的是**日志**而不是 `.env` 文件：compose 只把 `environment:` 段列出的变量注入容器，
+> 变量写进 `.env` 但没进 compose 段同样会明文落库（该透传行已由
+> `backend/tests/test_compose_policy.py` 锁定）。
 
 ## 更新测试环境
 
@@ -160,6 +179,9 @@ TRUST_PROXY_HEADERS=true
 TRUSTED_PROXIES=127.0.0.1,172.16.0.0/12
 SECURITY_HEADERS=true
 HSTS_ENABLED=true
+# 必检项（OPEN-002）：生产环境未配置该密钥时，启动日志会以 **error** 级输出
+# PLAINTEXT 告警（应用不拒绝启动，见「推荐记录加密」章节）。必须配置。
+RECORD_ENCRYPTION_KEY=替换为生产强随机字符串
 ```
 
 启动：
@@ -170,6 +192,20 @@ docker compose up -d postgres redis
 docker compose run --rm backend sh -c "cd /srv/backend && alembic upgrade head"
 docker compose up -d --build
 ```
+
+**【硬性卡点 · OPEN-002】上线前必须通过**：推荐记录（含健康描述）明文落库属敏感个人
+信息合规风险，生产部署不得带着该告警上线。
+
+```bash
+if docker compose logs backend | grep -qi "RECORD_ENCRYPTION_KEY"; then
+  echo "FAIL: 生产环境推荐记录正在明文落库，请配置密钥后重启再上线"
+  exit 1
+fi
+echo "OK: 生产启动日志无 PLAINTEXT 告警"
+```
+
+> 该检查与 `APP_ENV` 无关：warning（非生产）与 error（生产）两条日志都含
+> `RECORD_ENCRYPTION_KEY`，命中任意一条即说明未加密。
 
 ## 宿主机 Nginx 反代
 
@@ -233,13 +269,14 @@ TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-false}
 TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
 SECURITY_HEADERS: ${SECURITY_HEADERS:-true}
 HSTS_ENABLED: ${HSTS_ENABLED:-false}
+RECORD_ENCRYPTION_KEY: ${RECORD_ENCRYPTION_KEY:-}   # 留空=明文落库，内测/生产必配，见下节
 ```
 
 ### 推荐记录加密（敏感个人信息，内测/生产必须配置）
 
 推荐记录包含用户画像与推荐结果，其中 `health_status` / `health_issues`（70+ 健康编码）
 属**敏感个人信息**。未配置密钥时应用**不会拒绝启动**（本地开发显式降级，保证可用），
-但会明文落库并在启动日志输出 warning：
+但会明文落库并在启动日志输出告警——非生产为 warning，`APP_ENV=production` 升级为 error：
 
 ```
 WARNING backend.main:main.py:35 RECORD_ENCRYPTION_KEY is not set: recommendation records
@@ -247,15 +284,27 @@ WARNING backend.main:main.py:35 RECORD_ENCRYPTION_KEY is not set: recommendation
 Set the key in .env before exposing the system to real users.
 ```
 
-**对外内测 / 生产部署的硬性前置检查**（`§首次部署测试环境` 与 `§生产部署` 均适用）：
+**对外内测 / 生产部署的硬性卡点**（`§首次部署测试环境` 与 `§生产部署` 的操作清单已各含
+一份，可直接放进部署脚本）：
 
 ```bash
-# 生成并写入 .env（任意字符串，应用内部派生 Fernet 密钥）
-RECORD_ENCRYPTION_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(48))")
+# 1. 生成密钥并写入 .env（任意非空字符串，应用内部派生 Fernet 密钥）
+python -c "import secrets; print('RECORD_ENCRYPTION_KEY=' + secrets.token_urlsafe(48))" >> .env
 
-# 启动后确认不再出现上述 PLAINTEXT warning
-docker compose logs backend | grep -i "RECORD_ENCRYPTION_KEY" || echo "OK: 已配置加密密钥"
+# 2. 确认 compose 已把它注入容器（缺这一行则 .env 写了也不生效）
+docker compose config | grep -A1 "RECORD_ENCRYPTION_KEY"
+
+# 3. 启动后检查日志：命中 PLAINTEXT 告警即判定不合格（退出码 1）
+if docker compose logs backend | grep -qi "RECORD_ENCRYPTION_KEY"; then
+  echo "FAIL: 推荐记录正在明文落库"
+  exit 1
+fi
+echo "OK: 推荐记录已加密"
 ```
+
+> 为什么第 2 步不可省：Compose 只把 `environment:` 段显式列出的变量注入容器，
+> `.env` 里存在但段里缺失的变量对进程不可见。该透传行由
+> `backend/tests/test_compose_policy.py::test_backend_forwards_record_encryption_key` 锁定。
 
 注意事项：
 
