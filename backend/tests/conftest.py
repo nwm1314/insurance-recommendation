@@ -33,14 +33,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 import pytest
 
-# 在安装替换**之前**保存原始 from_url，供回归用例连真实 Redis 做"未误写"校验。
-# 注意：`backend.app.middleware.rate_limiter` 里的 `redis` 就是同一个模块对象，
-# 因此对 `rate_limiter_module.redis.from_url` 的替换会**全局**生效；必须在这里
-# 先把原始函数引用保存下来。
+# 在安装替换**之前**保存原始客户端类，供回归用例连真实 Redis 做"未误写"校验。
+# 注意：三个调用点引用的都是同一个 `redis` 模块对象，故对该模块 `from_url` 的
+# 替换是全局生效的；必须先把原始引用保存下来。
 import redis as _redis_lib
 
 REAL_REDIS_CLIENT_CLASS = _redis_lib.Redis
-REAL_FROM_URL = _redis_lib.from_url
 
 
 class FakeRedis:
@@ -115,35 +113,21 @@ FAKE_REDIS = FakeRedis()
 
 
 def _install_fake_redis() -> None:
-    """把三处 Redis 入口替换为进程内假客户端。
+    """把 Redis 客户端工厂替换为进程内假客户端。
 
-    在模块导入时调用一次（早于被测模块导入与 TestClient 构建），并在会话级
-    fixture 中重复调用以兜底。
+    **不导入任何 backend 模块**：conftest 在任何测试模块之前加载，若此时
+    import `backend.app.*`，会连带 import `backend.app.database` 并把 DB engine
+    绑定到 `settings.database_url` 的默认值（`sqlite:///data/insurance.db`，
+    即开发库）——那时测试模块还没机会设 `DATABASE_URL`，于是全部测试都会写进
+    开发库（实测会把 products 写进 data/insurance.db）。
+
+    因此这里只改第三方 `redis` 模块上的 `from_url`：三个调用点
+    （rate_limiter / recommend / auth）都是 `redis.from_url(...)` 或
+    `redis_lib.from_url(...)`，指向同一个模块对象，运行期解析即得假客户端。
     """
-    import backend.app.api.auth as auth_module
-    import backend.app.api.recommend as recommend_module
-    import backend.app.middleware.rate_limiter as rate_limiter_module
+    import redis as redis_lib
 
-    # 1) 限流中间件：替换 from_url，并改写实例属性兜底（实例可能已构建）
-    rate_limiter_module.redis.from_url = lambda *a, **k: FAKE_REDIS
-    _original_init = rate_limiter_module.RateLimiterMiddleware.__init__
-
-    if not getattr(_original_init, "_dsh_redis_patched", False):
-
-        def __init__(self, app):
-            _original_init(self, app)
-            # 无视 from_url 的结果，强制指向假客户端
-            self.redis = FAKE_REDIS
-            self._script = FAKE_REDIS.register_script("")
-
-        __init__._dsh_redis_patched = True
-        rate_limiter_module.RateLimiterMiddleware.__init__ = __init__
-
-    # 2) 推荐接口的 AI 缓存 / 每日配额
-    recommend_module._get_redis = lambda: FAKE_REDIS
-
-    # 3) 登录防爆破
-    auth_module._get_redis_client = lambda: FAKE_REDIS
+    redis_lib.from_url = lambda *a, **k: FAKE_REDIS
 
 
 # 导入即安装：确保早于任何 client fixture 构建 TestClient。

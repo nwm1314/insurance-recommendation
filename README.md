@@ -144,6 +144,44 @@ npm install
 npm run dev  # http://localhost:3000
 ```
 
+### 运行测试
+
+在仓库根目录执行（三条命令相互独立）：
+
+```powershell
+# 1. 后端全量测试（每个测试文件使用独立临时 SQLite；Redis 由 tests/conftest.py 隔离）
+./backend/venv/Scripts/python.exe -m pytest backend/tests -q
+
+# 2. 前端构建（含 tsc 类型检查）
+cd frontend; npm run build
+
+# 3. E2E（自起真实后端 + vite，产物落 frontend/test-results/ 与 frontend/playwright-report/）
+cd frontend; npx playwright test
+```
+
+**测试端口与常见故障**：E2E 默认占用 **3000**（前端）与 **8000**（后端），且
+`reuseExistingServer: false` —— 端口被占用时 Playwright 会**直接失败**而不是复用，
+vite 亦以 `--strictPort` 启动，不会静默改用 3001。
+
+若报 `http://localhost:3000 is already used`，说明有残留的 dev server 占用端口（常见于
+上次调试中断后）。处置：
+
+```powershell
+# 查看并结束占用 3000 / 8000 的进程（Windows）
+Get-NetTCPConnection -LocalPort 3000 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+Get-NetTCPConnection -LocalPort 8000 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+```
+
+也可用环境变量改端口：`$env:E2E_FRONTEND_PORT=3100; $env:E2E_BACKEND_PORT=8100; npx playwright test`。
+
+**数据库迁移门禁**：应用启动时 `verify_schema_integrity()` 会校验模型与 Alembic 迁移一致。
+若报 `Database schema is at migration 'xxxx' but the current Alembic head is 'yyyy'`，
+说明本地库停留在旧版本（`data/insurance.db` 为默认开发库，位于 `.gitignore`），执行：
+
+```bash
+cd backend && alembic upgrade head
+```
+
 ### 管理员初始化
 
 公开注册的用户只获得普通 `user` 角色。首个管理员通过环境变量受控创建（幂等，已存在则不重复创建，创建动作写入审计日志 `auth.first_admin.bootstrap`，密码不写入日志；创建完成后建议清空 `FIRST_ADMIN_PASSWORD`）：

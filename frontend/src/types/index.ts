@@ -23,7 +23,8 @@ export interface UserProfile {
 
 export interface ExistingPolicy {
   type: string;
-  // 保额（元）；未披露时为 null
+  // 保额（**元**）；未披露时为 null。注意与 ProductItem.sum_insured 单位相反
+  // （后者为**万**），两者分别对应"用户填写的已有保单"与"产品库保额"。
   sum_insured?: number | null;
   annual_premium?: number | null;
 }
@@ -47,7 +48,10 @@ export interface ProductItem {
   layer: string;
   premium: number;
   premium_max: number | null;
+  // 免赔额（**元**）；无免赔额产品为 null
   deductible: number | null;
+  // 保额（**万**，展示层直接拼 "万"，见 ProductCard.tsx / CompareTable.tsx）；
+  // 与 ExistingPolicy.sum_insured（元）单位相反，改动金额口径时四层需同步
   sum_insured: number;
   source_url: string;
   // official=承保公司官网，aggregator=聚合站产品详情页；历史记录可能缺省
@@ -126,6 +130,8 @@ export interface RecommendationResult {
     total_budget: number;
     allocation: { medical: number; accident: number; critical_illness: number; life: number; cancer: number };
   };
+  // 建议保额（单位**元**）；展示层在 ResultPage.tsx 除以 10000 后拼 "万"。
+  // 注意与 ProductItem.sum_insured（存储即万）口径不同。
   sum_insured_advice: {
     medical: number;
     accident: number;

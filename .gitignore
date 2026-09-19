@@ -52,5 +52,13 @@ frontend/test_*.txt
 /scripts/patch_*.js
 /scripts/update_tasks.py
 
+# DEV-005：审计/调试期的临时产物（下划线前缀）与一次性 Playwright 探测脚本
+_audit_scratch/
+/_baseline_*.txt
+frontend/_*.cjs
+frontend/_*.mjs
+/_msg_*.txt
+/_commitmsg.txt
+
 # Codex/editor-local workspace metadata
 /.codex/

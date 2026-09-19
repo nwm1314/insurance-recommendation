@@ -8,10 +8,9 @@
 * `ai_cache:*` 跨 pytest 进程存活，使"LLM 不可用应降级"的用例读到旧缓存
   （`engine_mode` 恒为 `ai`，实测 1 failed）。
 
-本文件把"三个入口都已被替换为进程内假客户端"这一前提固化为回归用例——若将来有人
-新增 Redis 入口或回退了 conftest 的安装逻辑，这里会直接失败。
+隔离手段：conftest 在导入期把 `redis.from_url` 替换为返回进程内 FakeRedis 的工厂。
 
-注意：这里通过 `isolate_redis` / `fake_redis` 夹具取得假客户端实例，**不要**
+注意：这里通过 `fake_redis` 夹具取得假客户端实例，**不要**
 `import backend.tests.conftest` —— 那会以另一个模块身份重新执行 conftest，产生
 第二个互不相干的 FakeRedis 实例，从而误判。
 """
@@ -19,8 +18,16 @@
 import pytest
 
 
-def test_rate_limiter_uses_fake_redis(fake_redis):
-    """限流中间件的 redis 必须是进程内假客户端，而非真实连接。"""
+def test_redis_from_url_returns_fake_client(fake_redis):
+    """`redis.from_url` 必须返回进程内假客户端（三处入口的共同依赖）。"""
+    import redis as redis_lib
+
+    client = redis_lib.from_url("redis://localhost:6379", decode_responses=True)
+    assert client is fake_redis, "from_url 必须被替换为假客户端工厂"
+
+
+def test_rate_limiter_endpoint_uses_fake_redis(fake_redis):
+    """限流中间件通过 from_url 建连，因而必须拿到假客户端。"""
     from backend.app.middleware.rate_limiter import RateLimiterMiddleware
 
     class _App:
@@ -46,17 +53,12 @@ def test_auth_redis_entry_is_fake(fake_redis):
 
 def test_fake_redis_writes_do_not_reach_real_server(fake_redis):
     """向假客户端写入后，真实 Redis 不得出现对应键。"""
-    import redis as redis_lib
-
     from backend.app.config import settings
+    from backend.tests.conftest import REAL_REDIS_CLIENT_CLASS
 
     probe_key = "dev001_isolation_probe"
     fake_redis.incr(probe_key)
     assert fake_redis.get(probe_key) == "1", "假客户端应记录该键"
-
-    # 注意：settings.redis_url 的 from_url 已被 conftest 全局替换，这里用未被
-    # 替换的原始客户端类去连真实服务端。
-    from backend.tests.conftest import REAL_REDIS_CLIENT_CLASS
 
     try:
         real = REAL_REDIS_CLIENT_CLASS.from_url(settings.redis_url, decode_responses=True)
@@ -70,11 +72,39 @@ def test_fake_redis_writes_do_not_reach_real_server(fake_redis):
         real.close()
 
 
-def test_rate_limit_keys_are_empty_at_test_start(fake_redis):
-    """限流键必须在每个用例开始时清零（消除顺序依赖）。
+def test_conftest_does_not_import_backend_at_load_time():
+    """conftest 不得在导入期 import backend 模块。
 
-    若上一个用例的计数残留，本断言会失败。
+    否则会连带 import `backend.app.database`，把 DB engine 绑定到默认的
+    `sqlite:///data/insurance.db`（开发库）——此时测试模块还没机会设
+    `DATABASE_URL`，导致所有测试写进开发库（实测会污染 data/insurance.db）。
     """
+    import ast
+    import io
+    import os
+
+    conftest_path = os.path.join(os.path.dirname(__file__), "conftest.py")
+    source = io.open(conftest_path, encoding="utf-8").read()
+    tree = ast.parse(source)
+
+    # 收集模块级（顶层）的 import 语句；函数体内的延迟导入是允许的
+    offenders = []
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("backend"):
+                    offenders.append(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if (node.module or "").startswith("backend"):
+                offenders.append(node.module)
+
+    assert offenders == [], (
+        f"conftest.py 顶层不得 import backend 模块（会污染开发库）：{offenders}"
+    )
+
+
+def test_rate_limit_keys_are_empty_at_test_start(fake_redis):
+    """限流键必须在每个用例开始时清零（消除顺序依赖）。"""
     assert fake_redis.keys("rate_limit:*") == [], "用例起始状态不应残留限流键"
     fake_redis.incr("rate_limit:ip:probe")
     assert fake_redis.keys("rate_limit:*") == ["rate_limit:ip:probe"]
