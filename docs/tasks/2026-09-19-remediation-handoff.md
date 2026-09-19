@@ -46,7 +46,7 @@
 | `59a4e99` | OPEN-001: 结果页补「下一步怎么做」说明，并把「起」口径统一到产品卡与对比表 |
 | `5d74866` | OPEN-002: 把推荐记录加密密钥变成部署清单的硬性卡点（补齐 compose 透传缺口） |
 | `4aa9ef6` | docs: 记录 OPEN-001~005 决策落地结果，PROD-001 转为已闭环 |
-| 本次提交 | DEV-009: e2e 端口来源统一（偏移端口验收不再需要改代码） |
+| `0a2fae3` | DEV-009: 偏移 E2E 端口不再需要改代码——warmup 与 /api 代理统一取配置端口 |
 
 ---
 
@@ -244,5 +244,6 @@ cd frontend; $env:E2E_FRONTEND_PORT=3110; $env:E2E_BACKEND_PORT=8110; npx playwr
 | 未验证项 | 默认端口 3000/8000 路径本轮**未重跑**（3000 仍被外部项目占用）。判据：该路径下 `use.baseURL` 解析为 `http://localhost:3000`、`BACKEND_PORT` 取默认 8000，与修复前写字面量时等价；前两轮均在默认端口取得 37 passed |
 | 第 2 项复核 | 上一轮报的"加密告警属清单级非运行时强制"**不是缺陷**，为 OPEN-002 方案 3 的既定语义，`test_ops002_security.py` 3 条 + compose 透传回归锁定，文档亦明示；详见 §6 第 6 条补记。改判需人类重新拍板 |
 
-**本轮 commit**：1 个（DEV-009：3 个源文件/测试文件 + README + 两份任务文档），已快进合并入
+**本轮 commit**：`0a2fae3`（DEV-009：`global-setup.ts` + `vite.config.ts` + 新增守卫测试 +
+README + 本文件与 cards/open-questions），随后以 `docs:` 补记该 commit 号；已快进合并入
 `master`；合并后 `git status` 干净、`git stash list` 为空。
