@@ -870,6 +870,113 @@ def test_ai_mode_without_api_key_degrades_with_clear_narrative(client, monkeypat
     assert "LLM API Key" in data["llm_narrative"]
 
 
+def test_ai_cache_hit_keeps_ai_from_cache_flag_and_engine_mode(client, monkeypatch):
+    """DEV-004：缓存命中时 engine_mode 仍为 'ai'（代表"上次成功的 AI 结果"），
+    但必须同时置 ai_from_cache=true，供前端区分"本次真的调用了大模型"。
+
+    本用例锁定该语义：若不置 ai_from_cache，前端将无法区分缓存与实时结果，
+    用户会在 LLM 实际不可用时仍看到"AI 精排模式"。
+    """
+    import json as _json
+
+    import backend.app.api.recommend as recommend_module
+    from backend.app.config import settings
+
+    _seed_products()
+    monkeypatch.setattr(settings, "llm_api_key", "test-key")
+
+    class CacheHitRedis:
+        """get 恒定返回一条缓存；incr/setex 不应被走到。"""
+
+        def __init__(self):
+            self.writes = 0
+
+        def ping(self):
+            return True
+
+        def get(self, key):
+            return _json.dumps({"narrative": "缓存叙事", "explanation": None})
+
+        def setex(self, key, ttl, value):
+            self.writes += 1
+
+        def incr(self, key):
+            return 1
+
+        def expire(self, key, ttl):
+            pass
+
+    stub = CacheHitRedis()
+    monkeypatch.setattr(recommend_module, "_get_redis", lambda: stub)
+
+    def must_not_be_called(*args, **kwargs):
+        raise AssertionError("缓存命中时不得调用 LLM")
+
+    monkeypatch.setattr(recommend_module, "ai_rerank_sync", must_not_be_called)
+
+    payload = {**_base_payload(), "age": 30, "enable_llm_engine": True}
+    response = client.post("/api/recommend", json=payload)
+    assert response.status_code == 200, response.text
+    data = response.json()
+
+    assert data["engine_mode"] == "ai", "缓存结果仍属 AI 结果"
+    assert data["ai_from_cache"] is True, "必须标注结果来自缓存（DEV-004）"
+    assert data["llm_narrative"] == "缓存叙事"
+    assert stub.writes == 0, "缓存命中不应再次写缓存"
+
+
+def test_ai_cache_miss_marks_ai_from_cache_false(client, monkeypatch):
+    """DEV-004 对照：本次真正调用 LLM 成功时 ai_from_cache 必须为 false。
+
+    success=False 与 missing 字段是两种语义，前端据此区分"实时"与"缓存"。
+    """
+    import backend.app.api.recommend as recommend_module
+    from backend.app.config import settings
+    from backend.app.engine.ai_engine import AIRecommendationExplanation
+
+    _seed_products()
+    monkeypatch.setattr(settings, "llm_api_key", "test-key")
+
+    class EmptyRedis:
+        def __init__(self):
+            self.data = {}
+
+        def ping(self):
+            return True
+
+        def get(self, key):
+            return None
+
+        def setex(self, key, ttl, value):
+            self.data[key] = value
+
+        def incr(self, key):
+            self.data[key] = str(int(self.data.get(key, "0")) + 1)
+            return int(self.data[key])
+
+        def expire(self, key, ttl):
+            pass
+
+    monkeypatch.setattr(recommend_module, "_get_redis", lambda: EmptyRedis())
+
+    def fake_rerank(user, pool, packages, budget):
+        return "实时叙事", AIRecommendationExplanation(
+            selected_product_ids=[], summary="摘要",
+            reasoning=[], risk_notes=[], comparison_notes=[],
+        )
+
+    monkeypatch.setattr(recommend_module, "ai_rerank_sync", fake_rerank)
+
+    payload = {**_base_payload(), "age": 30, "enable_llm_engine": True}
+    response = client.post("/api/recommend", json=payload)
+    assert response.status_code == 200, response.text
+    data = response.json()
+
+    assert data["engine_mode"] == "ai"
+    assert data["ai_from_cache"] is False, "实时 LLM 结果必须标注 ai_from_cache=false"
+    assert data["llm_narrative"] == "实时叙事"
+
+
 def test_ai_rerank_disables_deepseek_thinking_and_retries_empty_content(monkeypatch):
     import backend.app.engine.ai_engine as ai_engine
     from backend.app.config import settings

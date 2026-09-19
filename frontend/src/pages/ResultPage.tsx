@@ -1,7 +1,7 @@
-﻿import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useRef } from 'react';
-import { Alert, Card, Tabs, Typography, Spin, Tag, Row, Col, Button, Result, Space, Divider, Progress, Collapse, Table, Modal, Input, message } from 'antd';
+import { Alert, Card, Tabs, Typography, Spin, Tag, Row, Col, Button, Result, Space, Divider, Progress, Collapse, Table, Modal, Input, message, Tooltip } from 'antd';
 import { ReloadOutlined, EditOutlined, SaveOutlined } from '@ant-design/icons';
 import BudgetPreview from '../components/BudgetPreview';
 import ProductCard from '../components/ProductCard';
@@ -160,7 +160,15 @@ export default function ResultPage() {
     return `¥${pkg.total_premium.toLocaleString()}起`;
   };
 
-  const engineModeLabel = result.engine_mode === 'ai' ? 'AI 精排模式' : result.engine_mode === 'degraded' ? '降级模式（AI 繁忙，已自动切换）' : '极速规则模式';
+  // DEV-004：缓存命中时结果仍是"上次成功的 AI 结果"，但当前 LLM 可用性未经本次
+  // 验证。因此不能只显示"AI 精排模式"——需明确标注来自缓存，避免用户误以为本次
+  // 一定调用了大模型。（不改变降级语义：LLM 失败仍然降级为规则模式。）
+  const engineModeLabel = result.engine_mode === 'ai'
+    ? (result.ai_from_cache ? 'AI 精排模式（缓存结果）' : 'AI 精排模式')
+    : result.engine_mode === 'degraded' ? '降级模式（AI 繁忙，已自动切换）' : '极速规则模式';
+  const engineModeTip = result.engine_mode === 'ai' && result.ai_from_cache
+    ? '当前展示的是此前相同条件下已生成的 AI 精排结果（短期缓存），未重新调用大模型；如需重新生成可点击"重新推荐"。'
+    : undefined;
   const reasonCodeLabel = (code: string) => ({
     inactive: '停售',
     type_forbidden: '硬规则禁推',
@@ -177,7 +185,7 @@ export default function ResultPage() {
         <div>
           <Title level={3} style={{ margin: 0 }}>推荐方案</Title>
           <Tag color={result.engine_mode === 'ai' ? 'blue' : result.engine_mode === 'degraded' ? 'orange' : 'green'} style={{ marginTop: 4 }}>
-            {engineModeLabel}
+            {engineModeTip ? <Tooltip title={engineModeTip}><span>{engineModeLabel}</span></Tooltip> : engineModeLabel}
           </Tag>
         </div>
         <Space>

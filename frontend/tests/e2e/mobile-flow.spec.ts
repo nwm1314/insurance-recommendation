@@ -93,7 +93,6 @@ const ADMIN_USER = {
   id: 1, email: 'admin@example.com', full_name: '管理员',
   roles: ['admin'], permissions: ['crawl:read', 'crawl:trigger', 'product:write'],
 };
-
 const NORMAL_USER = {
   id: 2, email: 'user@example.com', full_name: '普通用户',
   roles: ['user'], permissions: ['product:read'],
@@ -268,3 +267,42 @@ test.describe('关键流程窄屏适配（mock API，无需后端）', () => {
     });
   }
 });
+
+// DEV-004：AI 结果来自短缓存时，结果页必须明确标注，避免用户误以为本次真的
+// 调用了大模型（缓存只代表"上次成功的 AI 结果"，当前 LLM 可用性未经本次验证）。
+test.describe('AI 缓存结果标注（mock API）', () => {
+  test('缓存命中显示"缓存结果"并给出说明；实时结果不显示', async ({ page }) => {
+    await page.route('**/api/recommend', (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ...RECOMMENDATION, engine_mode: 'ai', ai_from_cache: true }),
+    }));
+    await fillQuestionnaire(page);
+    await page.locator('button:has-text("开始推荐")').click();
+    await expect(page.locator('text=推荐方案').first()).toBeVisible({ timeout: 15000 });
+
+    const tag = page.locator('.ant-tag', { hasText: 'AI 精排模式' });
+    await expect(tag).toBeVisible();
+    await expect(tag).toContainText('缓存结果');
+
+    // 悬停应给出"未重新调用大模型"的说明
+    await tag.hover();
+    await expect(page.locator('text=未重新调用大模型')).toBeVisible({ timeout: 5000 });
+  });
+
+  test('实时 AI 结果不出现缓存标注', async ({ page }) => {
+    await page.route('**/api/recommend', (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ...RECOMMENDATION, engine_mode: 'ai', ai_from_cache: false }),
+    }));
+    await fillQuestionnaire(page);
+    await page.locator('button:has-text("开始推荐")').click();
+    await expect(page.locator('text=推荐方案').first()).toBeVisible({ timeout: 15000 });
+
+    const tag = page.locator('.ant-tag', { hasText: 'AI 精排模式' });
+    await expect(tag).toBeVisible();
+    await expect(tag).not.toContainText('缓存结果');
+  });
+});
+

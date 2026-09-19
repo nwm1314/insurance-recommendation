@@ -152,7 +152,12 @@ export interface RecommendationResult {
     risk_notes: string[];
     comparison_notes: string[];
   } | null;
+  // 'ai'=本次真正调用大模型成功；'ai' 且 ai_from_cache=true 表示结果来自短缓存
+  // （上一次成功的 AI 结果，当前 LLM 可用性未经本次验证）；'degraded'=已降级为规则
+  // 模式；其余为极速规则模式。展示层据此区分，见 ResultPage.tsx。
   engine_mode: string;
+  // AI-002 / DEV-004：AI 结果是否来自短缓存。历史记录可能缺省（undefined 视为未知）
+  ai_from_cache?: boolean | null;
   hard_rule_summary: string[];
   coverage_gap_summary: string[];
   not_recommended_summary: Array<{
