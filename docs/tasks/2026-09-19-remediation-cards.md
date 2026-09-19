@@ -127,7 +127,7 @@ AI 短缓存（`ai_cache_ttl_seconds`）写入真实 Redis，键跨 pytest 进�
 | DEV-004 | 开发 | P1 | D | ✅ 已修复 | A, B |
 | PROD-002 | 产品 | P1 | D | ✅ 已修复 | A |
 | PROD-001 | 产品 | P1 | E | ⛔ 阻塞（待决策） | 无 |
-| PROD-003 | 产品 | P2 | E | 待办（观察项） | A |
+| PROD-003 | 产品 | P2 | E | ✅ 已闭环（实测生效，已补回归） | A |
 
 ---
 
@@ -516,25 +516,39 @@ Set the key in .env before exposing the system to real users.
 | 视角 | 产品 |
 | 严重度 | P2 |
 | 批次 | E |
-| 状态 | 待办（观察项） |
+| 状态 | ✅ 已闭环（实测生效并已补回归） |
 | 依赖 | 批次 A |
 
-**证据**：`SEED_DEMO_PRODUCTS` 默认 false 已确认（`config.py:174`、`.env.example:65`、`docker-compose.yml:47`）；E2E 显式置 true（`start-backend.mjs:43`）。`data_stale` / `last_verified_at` 是否真的触发**未复现**。
+**证据**：`SEED_DEMO_PRODUCTS` 默认 false 已确认（`config.py:174`、`.env.example:65`、`docker-compose.yml:47`）；E2E 显式置 true（`start-backend.mjs:43`）。`data_stale` / `last_verified_at` 是否真的触发**未复现**（评审阶段）。
 
-**验收标准**：构造"超 90 天未复核"产品实测标注是否触发；结论写入 handoff。若无法在无网络环境复现，明确写"未验证"并说明尝试过程。
+**闭环结果（本轮实测，不再是假设）**：新增 `backend/tests/test_product_freshness.py`（4 条），
+用反例实证标注链路真实生效：
+
+| 场景 | `last_verified_at` | 期望 `data_stale` | 实测 |
+| ---- | ---- | ---- | ---- |
+| 从未复核 | `None` | `True` | ✅ |
+| 早于阈值（阈值+10 天） | 有值 | `True` | ✅ |
+| 刚复核（1 天前） | 有值 | `False` | ✅ |
+| 恰好等于阈值（90 天） | 有值 | `False`（严格大于） | ✅ |
+
+链路核对：`recommend._product_freshness`（`recommend.py:53-67`）→ `_build_response`
+（`:95`、`:113-114`）→ 前端 `ProductItem.data_stale` / `last_verified_at`
+（`types/index.ts:60-62`）展示，全链路完整。
+
+变异验证：将 stale 判定强制为 `False` 后，`test_product_verified_long_ago_is_marked_stale`
+立即失败（`assert False is True`），证明断言非空转。
 
 ---
 
 ## 3. 批次依赖图
 
 ```
-批次 A (DEV-001, DEV-002)  ← 前置，一切验证的可信度基础
+批次 A (DEV-001, DEV-002, DEV-007, DEV-008)  ← 前置，一切验证的可信度基础
    │
-   ├─→ 批次 B (DEV-003 → UX-002)
-   ├─→ 批次 C (DEV-005, DEV-006)
-   └─→ 批次 D (DEV-004, PROD-002)
-          │
-          └─→ 批次 E (PROD-001 阻塞于决策, PROD-003)
+   ├─→ 批次 B (DEV-003 → UX-002, UX-001)          ✅ 已完成
+   ├─→ 批次 C (DEV-005, DEV-006)                  ✅ 已完成
+   ├─→ 批次 D (DEV-004, PROD-002)                 ✅ 已完成
+   └─→ 批次 E (PROD-003 ✅ 已完成 / PROD-001 ⛔ 阻塞于人类决策)
 ```
 
 **关键约束**：批次 A 闭环前，不得采信任何"修复后全绿"的结论。
@@ -545,13 +559,18 @@ Set the key in .env before exposing the system to real users.
 
 | 状态 | 数量 | 卡 |
 | ---- | ---- | -- |
-| 已完成 | 0 | — |
+| 已完成 | 11 | DEV-001, DEV-002, DEV-003, DEV-004, DEV-005, DEV-006, DEV-007, DEV-008, UX-001, UX-002, PROD-002, PROD-003 |
 | 进行中 | 0 | — |
-| 待办 | 8 | DEV-001, DEV-002, DEV-003, UX-002, DEV-005, DEV-006, DEV-004, PROD-002 |
-| 阻塞（待决策） | 1 | PROD-001 |
-| 观察项 | 1 | PROD-003 |
-| **合计** | **10** | — |
+| 待办 | 0 | — |
+| 阻塞（待人类决策） | 1 | PROD-001（已记入 open-questions OPEN-001） |
+| **合计** | **12** | — |
 
-**P0 总数 3**（DEV-001/002/003），**P1 总数 6**（DEV-004/005、UX-001/002、PROD-001/002），**P2 总数 2**（DEV-006、PROD-003）。
+**P0 总数 4**（DEV-001/002/003/007）—— **全部闭环**。
+**P1 总数 7**（DEV-004/005/008、UX-001/002、PROD-001/002）—— 6 项闭环，PROD-001 阻塞于人类决策。
+**P2 总数 2**（DEV-006、PROD-003）—— **全部闭环**。
 
-> 注：UX-001（AntD label 宽高塌陷）未单独成卡 —— 根因待 DEV-003 修完后确认是"测试选择器问题"还是"真实 UI 可及性缺陷"；若确属后者，另开卡处理，避免在证据不足时改 UI。
+> 注 1：UX-001（AntD label 宽高塌陷）经 DEV-003 修复后确认根因是**在步骤隐藏时测量**，
+> 并非真实 UI 可及性缺陷（步骤可见时 label 与单选项均正常渲染，实测 144×32 等），
+> 故判定为闭环、不另开 UI 修复卡。
+> 注 2：DEV-007 / DEV-008 为评审报告产出后、修复过程中**新发现**的缺陷（均属测试隔离类），
+> 已一并闭环并登记在本文件批次 A 章节。
