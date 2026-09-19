@@ -60,7 +60,9 @@ export async function fillQuestionnaire(
 export async function submitRecommendation(page: Page): Promise<void> {
   await page.locator('button:has-text("开始推荐")').click();
   await expect(page.locator('text=推荐方案').first()).toBeVisible({ timeout: 60000 });
-  await expect(page.locator('text=横向对比')).toBeVisible();
+  // 精确匹配"横向对比"卡片标题：结果页的"下一步怎么做"文案正文会提到该卡片，
+  // 用宽松的 text= 选择器会命中多个元素而触发 strict mode violation。
+  await expect(page.getByText('横向对比', { exact: true })).toBeVisible();
 }
 
 export async function expectNoHorizontalOverflow(page: Page): Promise<void> {

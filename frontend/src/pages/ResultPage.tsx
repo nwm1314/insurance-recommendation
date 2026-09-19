@@ -402,6 +402,32 @@ export default function ResultPage() {
         <CompareTable products={allProducts} />
       </Card>
 
+      {/* OPEN-001（方案 1 + 局部增强）：本期不接入投保跳转与留资，改为把"拿到方案
+          之后该做什么"写清楚。文案边界：不承诺承保、不称区间为报价、明确引擎只在
+          已审核产品池内做筛选与排序。 */}
+      <Card title="下一步怎么做" size="small" style={{ marginTop: 16 }}>
+        <Paragraph style={{ marginBottom: 12 }}>
+          <Text type="secondary">
+            本工具是辅助决策工具：只在已审核的产品池内按您填写的画像筛选、排序并解释，
+            不提供实时核保，也不出具有效报价。评分与排序仅代表与您的匹配度，不代表保险公司会承保。
+          </Text>
+        </Paragraph>
+        <ol style={{ paddingLeft: 20, margin: 0 }}>
+          <li style={{ marginBottom: 8 }}>
+            <Text strong>核对产品来源</Text>
+            <Text>：点击产品卡或横向对比表中的「产品页 / 官网」链接查看来源页，保险条款、保障责任与免责以保险公司官方版本为准。</Text>
+          </li>
+          <li style={{ marginBottom: 8 }}>
+            <Text strong>逐项核对健康告知</Text>
+            <Text>：按官方健康告知逐项确认；有异常项时走智能核保或人工核保，最终以保险公司核保结论为准。</Text>
+          </li>
+          <li>
+            <Text strong>投保前先咨询</Text>
+            <Text>：就保费、保额与免责条款向保险公司官方客服确认后再投保。本工具不代收保费、不代办投保。</Text>
+          </li>
+        </ol>
+      </Card>
+
       <Disclaimer />
 
       <Modal

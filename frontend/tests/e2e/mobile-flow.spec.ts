@@ -146,13 +146,21 @@ test.describe('关键流程窄屏适配（mock API，无需后端）', () => {
         await expect(page.locator('text=建议保额')).toBeVisible();
         await expect(page.getByText('医疗险', { exact: true }).first()).toBeVisible();
         await expect(page.locator('.ant-tabs-tab', { hasText: '均衡配置' })).toBeVisible();
-        await expect(page.locator('text=横向对比')).toBeVisible();
+        await expect(page.getByText('横向对比', { exact: true })).toBeVisible();
         // TASK-029：画像评估提示（未知健康项 + 重复保障）渲染
         await expect(page.getByText('画像评估提示')).toBeVisible();
         await expect(page.getByText('未识别健康项')).toBeVisible();
         await expect(page.getByText('重复保障提示')).toBeVisible();
         await expect(page.getByText('未知症状X')).toBeVisible();
         await expect(page.locator('.ant-table').first()).toBeVisible();
+        // OPEN-001（方案 1 + 局部增强）：结果页必须给出"拿到方案之后该做什么"，
+        // 且不承诺承保——这三条锚定文案存在，防止后续改动把它删回去。
+        await expect(page.getByText('下一步怎么做')).toBeVisible();
+        await expect(page.getByText('辅助决策工具')).toBeVisible();
+        await expect(page.getByText('逐项核对健康告知')).toBeVisible();
+        // 合规口径：未披露保费上限的产品（P2 premium_max 为 null）不得显示成精确报价，
+        // 产品卡与横向对比表必须同一口径。
+        await expect(page.getByText('¥299起').first()).toBeVisible();
         await page.waitForTimeout(300);
         await expectNoHorizontalOverflow(page);
 

@@ -33,10 +33,12 @@ function ScoreCell({ value, maxScore, tooltip }: { value: number; maxScore: numb
 }
 
 function formatPremium(min: number, max: number | null): string {
-  if (max && max > min) {
+  if (max != null && max > min) {
     return `¥${min.toLocaleString()}-¥${max.toLocaleString()}`;
   }
-  return `¥${min.toLocaleString()}`;
+  // 与 ProductCard.formatPremium 保持同一口径：未披露上限必须带「起」，
+  // 否则同一产品在对比表里看起来是精确报价、在产品卡里不是。
+  return `¥${min.toLocaleString()}${max == null ? '起' : ''}`;
 }
 
 export default function CompareTable({ products }: Props) {

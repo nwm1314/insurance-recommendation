@@ -35,6 +35,11 @@ test.describe('推荐关键旅程（真实后端）', () => {
     await expect(page.locator('.ant-table').first()).toBeVisible();
     // TASK-029：真实 API 带出 profile_assessment，结果页展示重复保障提示
     await expect(page.getByText('重复保障提示')).toBeVisible({ timeout: 10000 });
+    // OPEN-001：真实后端结果页同样渲染"下一步怎么做"（不只是 mock 数据下才有）
+    await expect(page.getByText('下一步怎么做')).toBeVisible();
+    await expect(page.getByText('辅助决策工具')).toBeVisible();
+    // 默认视口即 1280×720：与 320/375 两档共同构成三档 UI 证据
+    await page.screenshot({ path: 'test-results/screenshots/next-steps-real-backend-1280px.png', fullPage: true });
 
     // 3. 结果页保存画像（隐私提示 → 命名 → 保存）
     await saveProfileFromResult(page, profileName);
@@ -58,7 +63,7 @@ test.describe('推荐关键旅程（真实后端）', () => {
     await page.locator('a:has-text("查看结果")').first().click();
     await expect(page).toHaveURL(/\/result\?recordId=\d+/);
     await expect(page.locator('text=推荐方案').first()).toBeVisible({ timeout: 60000 });
-    await expect(page.locator('text=横向对比')).toBeVisible();
+    await expect(page.getByText('横向对比', { exact: true })).toBeVisible();
     await expect.poll(() => historyDetailRequests, { timeout: 10000 }).toBe(1);
 
     // 6. 画像回填：加载到表单 → 首页预填年龄 30
@@ -103,7 +108,13 @@ for (const vp of MOBILE_VIEWPORTS) {
       await registerUser(page, email);
       await fillQuestionnaire(page);
       await submitRecommendation(page);
+      // OPEN-001：新增的"下一步怎么做"卡片含整段中文长句，窄屏必须自行换行不撑宽文档
+      await expect(page.getByText('下一步怎么做')).toBeVisible();
       await expectNoHorizontalOverflow(page);
+      await page.screenshot({
+        path: `test-results/screenshots/next-steps-real-backend-${vp.width}px.png`,
+        fullPage: true,
+      });
 
       await page.locator('button:has-text("保存画像")').click();
       await expect(page.locator('.ant-modal-content')).toBeVisible();

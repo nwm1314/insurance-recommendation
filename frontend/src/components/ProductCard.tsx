@@ -18,10 +18,12 @@ const LAYER_LABELS: Record<string, string> = {
 };
 
 function formatPremium(min: number, max: number | null): string {
-  if (max && max > min) {
+  if (max != null && max > min) {
     return `¥${min.toLocaleString()}-¥${max.toLocaleString()}`;
   }
-  return `¥${min.toLocaleString()}`;
+  // 上限未披露（max 为 null）时保留「起」：结果页顶部的口径说明正是以「起」告知
+  // 用户该数字不是精确报价，单个产品卡也必须一致，否则会被读成确定价格。
+  return `¥${min.toLocaleString()}${max == null ? '起' : ''}`;
 }
 
 interface Props {
