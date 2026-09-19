@@ -215,7 +215,7 @@ FIRST_ADMIN_EMAIL=admin@example.com FIRST_ADMIN_PASSWORD=强密码 python -m uvi
 | `TRUSTED_PROXIES` | 空 | 可信代理列表（IP 或 CIDR，逗号分隔），格式非法启动报错 |
 | `SECURITY_HEADERS` | `true` | 安全响应头开关（nosniff / X-Frame-Options / Referrer-Policy / CSP） |
 | `HSTS_ENABLED` | `false` | 发送 `Strict-Transport-Security`，仅 `APP_ENV=production` 时生效 |
-| `RECORD_ENCRYPTION_KEY` | 空 | 推荐记录落库加密密钥（Fernet，任意字符串自动派生）；为空明文落库并启动 warning |
+| `RECORD_ENCRYPTION_KEY` | 空 | 推荐记录落库加密密钥（Fernet，任意字符串自动派生）；为空明文落库并在启动时告警（测试/开发为 warning，`APP_ENV=production` 升级为 error）。**对外内测/生产必须配置** |
 | `RECORD_RETENTION_DAYS` | `0` | 健康信息保留天数预留（0=永久），本期不实现清理任务 |
 | `AI_DAILY_LIMIT_PER_USER` | `20` | AI 模式每日配额（登录按用户、匿名按 IP） |
 | `AI_CACHE_TTL_SECONDS` | `3600` | AI narrative 短缓存 TTL（Redis，故障跳过） |
@@ -223,7 +223,7 @@ FIRST_ADMIN_EMAIL=admin@example.com FIRST_ADMIN_PASSWORD=强密码 python -m uvi
 
 Cookie 登录用户计入用户级限流（限流优先解析 Bearer 头，其次解析 `access_token` Cookie）。详见 `docs/docker-deployment.md` 的“安全配置”章节。
 
-**推荐记录加密与保留**：设置 `RECORD_ENCRYPTION_KEY` 后，推荐记录的画像与结果（含健康描述）以 Fernet 加密落库（任意字符串密钥自动派生）；密钥为空则明文落库并在启动时输出 warning（显式降级）。加密仅覆盖推荐记录——数据库文件/备份仍需按敏感数据处理。健康信息保留期限以 `RECORD_RETENTION_DAYS`（0=永久）预留，当前版本不实现自动清理任务。
+**推荐记录加密与保留**：设置 `RECORD_ENCRYPTION_KEY` 后，推荐记录的画像与结果（含健康描述）以 Fernet 加密落库（任意字符串密钥自动派生）；密钥为空则明文落库并在启动时告警（显式降级，非静默），其中 `APP_ENV=production` 下升级为 **error** 级。由于推荐记录含 `health_status` / `health_issues` 等敏感个人信息，**对外内测与生产部署必须配置该密钥**（配置方式与注意事项见 `docs/docker-deployment.md` 的「推荐记录加密」章节）。加密仅覆盖推荐记录——数据库文件/备份仍需按敏感数据处理。健康信息保留期限以 `RECORD_RETENTION_DAYS`（0=永久）预留，当前版本不实现自动清理任务。
 
 ## 已知限制
 

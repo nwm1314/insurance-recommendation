@@ -235,6 +235,35 @@ SECURITY_HEADERS: ${SECURITY_HEADERS:-true}
 HSTS_ENABLED: ${HSTS_ENABLED:-false}
 ```
 
+### 推荐记录加密（敏感个人信息，内测/生产必须配置）
+
+推荐记录包含用户画像与推荐结果，其中 `health_status` / `health_issues`（70+ 健康编码）
+属**敏感个人信息**。未配置密钥时应用**不会拒绝启动**（本地开发显式降级，保证可用），
+但会明文落库并在启动日志输出 warning：
+
+```
+WARNING backend.main:main.py:35 RECORD_ENCRYPTION_KEY is not set: recommendation records
+(profile/result, including health disclosures) will be stored in PLAINTEXT.
+Set the key in .env before exposing the system to real users.
+```
+
+**对外内测 / 生产部署的硬性前置检查**（`§首次部署测试环境` 与 `§生产部署` 均适用）：
+
+```bash
+# 生成并写入 .env（任意字符串，应用内部派生 Fernet 密钥）
+RECORD_ENCRYPTION_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(48))")
+
+# 启动后确认不再出现上述 PLAINTEXT warning
+docker compose logs backend | grep -i "RECORD_ENCRYPTION_KEY" || echo "OK: 已配置加密密钥"
+```
+
+注意事项：
+
+- 密钥一旦更换，**既有密文记录将无法解密**（上层按"不可解密记录"处理，与 fail-open 边界
+  一致，见 `backend/app/models/auth.py`）。上线前设定并妥善备份。
+- 加密仅覆盖推荐记录；**数据库文件与备份仍需按敏感数据处理**。
+- 健康信息保留期限以 `RECORD_RETENTION_DAYS`（0=永久）预留，当前版本不实现自动清理任务。
+
 ### 产品池维护（聚合站采集 + 自动发布）
 
 backend 服务已按以下键透传产品池维护配置（默认值见 `.env.example`）：

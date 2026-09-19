@@ -1,4 +1,4 @@
-﻿import os
+import os
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -30,13 +30,25 @@ async def lifespan(app: FastAPI):
         settings.llm_model,
         safe_llm_base_url(settings.llm_base_url),
     )
-    # OPS-002：未配置加密密钥时推荐记录明文落库——显式降级，不静默
+    # OPS-002 / PROD-002：未配置加密密钥时推荐记录明文落库——显式降级，不静默。
+    # 推荐记录含 health_status / health_issues（敏感个人信息），故在生产环境下
+    # 升级为 error 级并指明处置方式；本地/测试仍保持可用（不拒绝启动，否则会破坏
+    # 开发体验与既有测试对 fail-open 语义的依赖）。
     if not settings.record_encryption_key:
-        logger.warning(
-            "RECORD_ENCRYPTION_KEY is not set: recommendation records (profile/result, "
-            "including health disclosures) will be stored in PLAINTEXT. Set the key in .env "
-            "before exposing the system to real users."
-        )
+        if settings.app_env == "production":
+            logger.error(
+                "RECORD_ENCRYPTION_KEY is not set while APP_ENV=production: recommendation "
+                "records (profile/result, including health disclosures) are being stored in "
+                "PLAINTEXT. This is a sensitive-personal-information compliance risk. "
+                "Set RECORD_ENCRYPTION_KEY in .env and restart (see docs/docker-deployment.md, "
+                "章节「推荐记录加密」)."
+            )
+        else:
+            logger.warning(
+                "RECORD_ENCRYPTION_KEY is not set: recommendation records (profile/result, "
+                "including health disclosures) will be stored in PLAINTEXT. Set the key in .env "
+                "before exposing the system to real users."
+            )
     validate_scoring_weights_on_startup(logger)
     init_db()
     db = SessionLocal()

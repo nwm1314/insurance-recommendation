@@ -174,3 +174,69 @@ def test_encrypted_json_type_tolerates_legacy_plaintext(monkeypatch):
         assert record.profile == {"legacy": True}, "历史明文 dict 应原样读出"
     finally:
         db.close()
+
+
+def _run_startup_warnings(caplog):
+    """执行一次 lifespan 启动段，返回捕获到的 log 记录。"""
+    import asyncio
+    import logging
+
+    from backend.main import lifespan, app
+
+    async def _run():
+        async with lifespan(app):
+            pass
+
+    with caplog.at_level(logging.WARNING, logger="backend.main"):
+        asyncio.run(_run())
+    return caplog.records
+
+
+def test_missing_encryption_key_warns_outside_production(caplog, monkeypatch):
+    """PROD-002 对照：非生产环境未配置密钥 → warning（保证本地开发可用，不拒绝启动）。"""
+    import logging
+
+    monkeypatch.setattr(settings, "record_encryption_key", "")
+    monkeypatch.setattr(settings, "app_env", "development")
+
+    records = _run_startup_warnings(caplog)
+    plaintext = [
+        r for r in records
+        if "RECORD_ENCRYPTION_KEY is not set" in r.getMessage()
+    ]
+    assert plaintext, "非生产环境应输出明文落库 warning"
+    assert all(r.levelno == logging.WARNING for r in plaintext), "非生产环境应为 warning 级"
+
+
+def test_missing_encryption_key_escalates_to_error_in_production(caplog, monkeypatch):
+    """PROD-002：生产环境未配置密钥 → 升级为 error 级，并指明处置方式。
+
+    推荐记录含 health_status / health_issues（敏感个人信息），生产明文落库是合规风险，
+    因此必须比本地更醒目。仍**不拒绝启动**——fail-open 语义保持不变。
+    """
+    import logging
+
+    monkeypatch.setattr(settings, "record_encryption_key", "")
+    monkeypatch.setattr(settings, "app_env", "production")
+
+    records = _run_startup_warnings(caplog)
+    escalated = [
+        r for r in records
+        if "RECORD_ENCRYPTION_KEY is not set while APP_ENV=production" in r.getMessage()
+    ]
+    assert escalated, "生产环境应输出升级版 error 提示"
+    assert all(r.levelno == logging.ERROR for r in escalated), "生产环境必须为 error 级"
+    assert any("docs/docker-deployment.md" in r.getMessage() for r in escalated), (
+        "提示中应指明处置文档"
+    )
+
+
+def test_configured_encryption_key_emits_no_plaintext_warning(caplog, monkeypatch):
+    """配置密钥后不得再输出明文落库提示。"""
+    monkeypatch.setattr(settings, "record_encryption_key", "configured-key")
+    monkeypatch.setattr(settings, "app_env", "production")
+
+    records = _run_startup_warnings(caplog)
+    assert not [
+        r for r in records if "RECORD_ENCRYPTION_KEY is not set" in r.getMessage()
+    ], "已配置密钥时不应告警"
