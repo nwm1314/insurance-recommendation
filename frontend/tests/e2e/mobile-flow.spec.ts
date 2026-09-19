@@ -51,12 +51,12 @@ const RECOMMENDATION = {
   },
   packages: [
     {
-      tag: 'balanced', tag_label: '均衡型方案', total_premium: 14800, total_premium_max: 15600,
+      tag: 'balanced', tag_label: '均衡配置', total_premium: 14800, total_premium_max: 15600,
       budget_ratio: 0.074, budget_utilization: 0.93, completeness_score: 0.92, coverage_gap_notes: [],
       products: [P1, P2, P3],
     },
     {
-      tag: 'cheap', tag_label: '极致性价比', total_premium: 9800, total_premium_max: 10400,
+      tag: 'cheap', tag_label: '低保费优先', total_premium: 9800, total_premium_max: 10400,
       budget_ratio: 0.049, budget_utilization: 0.61, completeness_score: 0.71, coverage_gap_notes: ['定期寿险保障偏弱'],
       products: [P1, P4],
     },
@@ -145,7 +145,7 @@ test.describe('关键流程窄屏适配（mock API，无需后端）', () => {
         await expect(page.locator('text=预算与报价分析')).toBeVisible();
         await expect(page.locator('text=建议保额')).toBeVisible();
         await expect(page.getByText('医疗险', { exact: true }).first()).toBeVisible();
-        await expect(page.locator('.ant-tabs-tab', { hasText: '均衡型方案' })).toBeVisible();
+        await expect(page.locator('.ant-tabs-tab', { hasText: '均衡配置' })).toBeVisible();
         await expect(page.locator('text=横向对比')).toBeVisible();
         // TASK-029：画像评估提示（未知健康项 + 重复保障）渲染
         await expect(page.getByText('画像评估提示')).toBeVisible();

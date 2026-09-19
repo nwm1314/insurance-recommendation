@@ -368,6 +368,34 @@ def test_invalid_scoring_weight_config_can_fail_fast(monkeypatch):
         monkeypatch.setattr(scoring.settings, "scoring_weights_fail_fast", False)
 
 
+def test_package_labels_are_neutral_not_quality_tiered():
+    """OPEN-003（方案 2）：套餐名必须是**中性功能化**表述。
+
+    三套方案的真实差异只是预算档位与保障完整度（budget_multiplier 0.5/0.8/1.0），
+    并不存在"哪套更好"。旧名"尊享无忧""全面保障"隐含"越贵越好"，会诱导超预算选择。
+
+    本用例锁定新命名，防止回退；同时断言不再出现暗示优劣的旧词。
+    """
+    from backend.app.engine.combo_builder import PACKAGE_DEFS
+
+    labels = {tag: label for tag, label, _mult, _strategy in PACKAGE_DEFS}
+    assert labels["budget"] == "🛡 低保费优先"
+    assert labels["star"] == "⭐ 均衡配置"
+    assert labels["premium"] == "👑 高保额优先"
+
+    # 不得出现暗示"更贵=更好"的措辞
+    forbidden = ["尊享", "无忧", "全面保障", "极致", "豪华", "高端", "尊贵"]
+    joined = " ".join(labels.values())
+    for word in forbidden:
+        assert word not in joined, f"套餐名不应含暗示优劣的措辞：{word}"
+
+    # 三套方案的预算档位必须严格递增，命名取向与之对应
+    multipliers = {tag: mult for tag, _label, mult, _strategy in PACKAGE_DEFS}
+    assert multipliers["budget"] < multipliers["star"] < multipliers["premium"]
+    assert "低保费" in labels["budget"]
+    assert "高保额" in labels["premium"]
+
+
 def test_combo_swap_in_missing_required_and_coverage_gaps():
     """REC-004：premium 套餐中防癌（supplement）挤占重疾预算 → 经一次置换
     换回重疾（completeness 0.75→1.0）；star 套餐中置换会以定寿为 victim，

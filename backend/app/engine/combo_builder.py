@@ -12,10 +12,16 @@ LAYER_MAP = {
 # Package definitions: tag → (label, budget_multiplier, sort_strategy)
 # - "cheapest": sort by premium ascending, pick lowest price
 # - "best_score": sort by raw score descending (with tier preference bonus)
+#
+# OPEN-003（方案 2）：套餐名改为**中性功能化**表述，不再使用"极致性价比 /
+# 全面保障 / 尊享无忧"。原因：旧名中的"尊享""全面"隐含"越贵越好"的优劣暗示，
+# 而三套方案的真实差异只是**预算档位与保障完整度**（budget_multiplier 0.5/0.8/1.0
+# 以及 star/premium 会做一次缺失险种置换，见 _required_types_for_package），
+# 并不存在"哪个更好"。新名直接说明取向，避免诱导超预算选择。
 PACKAGE_DEFS = [
-    ("budget", "🛡 极致性价比", 0.5, "cheapest"),
-    ("star", "⭐ 全面保障", 0.8, "best_score"),
-    ("premium", "👑 尊享无忧", 1.0, "best_score"),
+    ("budget", "🛡 低保费优先", 0.5, "cheapest"),
+    ("star", "⭐ 均衡配置", 0.8, "best_score"),
+    ("premium", "👑 高保额优先", 1.0, "best_score"),
 ]
 
 
@@ -399,8 +405,8 @@ def _build_single_combo(
 
     # REC-004 一次置换 pass（star/premium 套餐，至多一轮）：存在缺失的
     # required 类型时，用该类型最便宜的合格产品替换已选中分值最低且非
-    # 医疗/意外的产品；completeness 提升才采纳。budget 套餐保持极致性
-    # 价比语义，不做置换。
+    # 医疗/意外的产品；completeness 提升才采纳。budget 套餐保持"低保费优先"
+    # 语义，不做置换。
     covered_types = {p.type for p in scored_list}
     missing_types = [t for t in required_types if t not in covered_types]
     if tag in ("star", "premium") and missing_types:
