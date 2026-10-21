@@ -3,10 +3,12 @@ import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Alert, Button, Card, Descriptions, Input, List, Modal, Popconfirm, Space, Tag, Typography, message } from 'antd';
 import { deleteProfile, deleteRecommendation, fetchMe, fetchMyProfiles, fetchMyRecommendations, fetchProfileDetail, getStoredUser, logout, saveProfile, updateProfile } from '../api/auth';
 import type { AuthUser, RecommendationRecord, SavedProfile, UserProfile } from '../types';
+import { useI18n } from '../i18n';
 
 const { Text, Title } = Typography;
 
 export default function AccountPage() {
+  const { t } = useI18n();
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
   const [records, setRecords] = useState<RecommendationRecord[]>([]);
   const [profiles, setProfiles] = useState<SavedProfile[]>([]);
@@ -24,14 +26,14 @@ export default function AccountPage() {
     if (!currentProfile) return;
     setSaving(true);
     try {
-      await saveProfile(saveName.trim() || '未命名画像', currentProfile as unknown as Record<string, unknown>);
+      await saveProfile(saveName.trim() || t('common.unnamedProfile'), currentProfile as unknown as Record<string, unknown>);
       setSaveModalOpen(false);
       setSaveName('');
-      message.success('画像已保存');
+      message.success(t('account.saveOk'));
       const savedProfiles = await fetchMyProfiles();
       setProfiles(savedProfiles);
     } catch {
-      message.error('画像保存失败，请稍后重试');
+      message.error(t('account.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -50,7 +52,7 @@ export default function AccountPage() {
         setRecords(recommendationRecords);
         setProfiles(savedProfiles);
       } catch {
-        message.error('账户信息加载失败，请重新登录');
+        message.error(t('account.loadFailed'));
       } finally {
         setLoading(false);
       }
@@ -62,9 +64,9 @@ export default function AccountPage() {
     try {
       await deleteRecommendation(id);
       setRecords(records.filter(r => r.id !== id));
-      message.success('推荐记录已删除');
+      message.success(t('account.recordDeleted'));
     } catch {
-      message.error('删除失败');
+      message.error(t('account.deleteFailed'));
     }
   };
 
@@ -72,9 +74,9 @@ export default function AccountPage() {
     try {
       await deleteProfile(id);
       setProfiles(profiles.filter(p => p.id !== id));
-      message.success('画像已删除');
+      message.success(t('account.profileDeleted'));
     } catch {
-      message.error('删除失败');
+      message.error(t('account.deleteFailed'));
     }
   };
 
@@ -88,11 +90,11 @@ export default function AccountPage() {
     try {
       const updated = await updateProfile(editingProfile.id, editingProfile.name, editingProfile.profile, editingProfile.note || undefined);
       setProfiles(profiles.map(p => p.id === updated.id ? updated : p));
-      message.success('画像已更新');
+      message.success(t('account.profileUpdated'));
       setEditModalOpen(false);
       setEditingProfile(null);
     } catch {
-      message.error('更新失败');
+      message.error(t('account.updateFailed'));
     }
   };
 
@@ -103,41 +105,41 @@ export default function AccountPage() {
       <Card loading={loading}>
         <Space style={{ width: '100%', justifyContent: 'space-between' }} align="start">
           <div>
-            <Title level={3}>我的账户</Title>
-            <Text type="secondary">查看登录身份、权限和已保存的推荐数据。</Text>
+            <Title level={3}>{t('account.title')}</Title>
+            <Text type="secondary">{t('account.subtitle')}</Text>
           </div>
           <Button onClick={async () => {
             await logout();
             navigate('/login', { replace: true });
-          }}>退出登录</Button>
+          }}>{t('account.logout')}</Button>
         </Space>
         <Descriptions bordered size="small" column={1} style={{ marginTop: 24 }}>
-          <Descriptions.Item label="邮箱">{user.email}</Descriptions.Item>
-          <Descriptions.Item label="姓名">{user.full_name || '-'}</Descriptions.Item>
-          <Descriptions.Item label="角色">
+          <Descriptions.Item label={t('account.email')}>{user.email}</Descriptions.Item>
+          <Descriptions.Item label={t('account.fullName')}>{user.full_name || '-'}</Descriptions.Item>
+          <Descriptions.Item label={t('account.roles')}>
             {user.roles.map((role) => <Tag key={role}>{role}</Tag>)}
           </Descriptions.Item>
-          <Descriptions.Item label="权限">
+          <Descriptions.Item label={t('account.permissions')}>
             {user.permissions.map((permission) => <Tag key={permission} color="blue">{permission}</Tag>)}
           </Descriptions.Item>
         </Descriptions>
       </Card>
 
-      <Card title="推荐历史">
+      <Card title={t('account.history')}>
         <List
           dataSource={records}
-          locale={{ emptyText: '暂无推荐历史。登录后提交推荐会自动保存。' }}
+          locale={{ emptyText: t('account.historyEmpty') }}
           renderItem={(record) => (
             <List.Item
               actions={[
-                <Link key="view" to={`/result?recordId=${record.id}`}>查看结果</Link>,
-                <Popconfirm key="delete" title="确认删除该推荐记录？" description="删除后不可恢复。" onConfirm={() => handleDeleteRecord(record.id)}>
-                  <Button type="link" size="small" danger>删除</Button>
+                <Link key="view" to={`/result?recordId=${record.id}`}>{t('account.viewResult')}</Link>,
+                <Popconfirm key="delete" title={t('account.deleteRecordConfirm')} description={t('account.deleteIrreversible')} onConfirm={() => handleDeleteRecord(record.id)}>
+                  <Button type="link" size="small" danger>{t('common.delete')}</Button>
                 </Popconfirm>,
               ]}
             >
               <List.Item.Meta
-                title={`推荐记录 #${record.id}`}
+                title={t('account.recordTitle', { id: record.id })}
                 description={record.created_at ? new Date(record.created_at).toLocaleString() : '-'}
               />
             </List.Item>
@@ -145,17 +147,17 @@ export default function AccountPage() {
         />
       </Card>
 
-      <Card title="保存的画像">
+      <Card title={t('account.profiles')}>
         <Space style={{ width: '100%', justifyContent: 'flex-end', marginBottom: 8 }}>
           {currentProfile ? (
-            <Button type="primary" onClick={() => setSaveModalOpen(true)}>保存当前画像</Button>
+            <Button type="primary" onClick={() => setSaveModalOpen(true)}>{t('account.saveCurrent')}</Button>
           ) : (
-            <Text type="secondary" style={{ fontSize: 12 }}>在结果页点击“保存画像”可保存本次问卷；从结果页“修改信息”进入本页可保存当前画像。</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>{t('account.saveHint')}</Text>
           )}
         </Space>
         <List
           dataSource={profiles}
-          locale={{ emptyText: '暂无保存画像。' }}
+          locale={{ emptyText: t('account.profilesEmpty') }}
           renderItem={(profile) => (
             <List.Item
               actions={[
@@ -164,12 +166,12 @@ export default function AccountPage() {
                     const detail = await fetchProfileDetail(profile.id);
                     navigate(`/?profileId=${profile.id}`, { state: { profile: detail.profile } });
                   } catch {
-                    message.error('加载画像失败');
+                    message.error(t('account.loadProfileFailed'));
                   }
-                }}>加载到表单</Button>,
-                <Button key="edit" type="link" size="small" onClick={() => handleEditProfile(profile)}>编辑</Button>,
-                <Popconfirm key="delete" title="确认删除该画像？" description="删除后不可恢复。" onConfirm={() => handleDeleteProfile(profile.id)}>
-                  <Button type="link" size="small" danger>删除</Button>
+                }}>{t('account.loadToForm')}</Button>,
+                <Button key="edit" type="link" size="small" onClick={() => handleEditProfile(profile)}>{t('common.edit')}</Button>,
+                <Popconfirm key="delete" title={t('account.deleteProfileConfirm')} description={t('account.deleteIrreversible')} onConfirm={() => handleDeleteProfile(profile.id)}>
+                  <Button type="link" size="small" danger>{t('common.delete')}</Button>
                 </Popconfirm>,
               ]}
             >
@@ -182,24 +184,24 @@ export default function AccountPage() {
         />
       </Card>
       <Modal
-        title="保存健康画像"
+        title={t('common.saveHealthProfile')}
         open={saveModalOpen}
         onOk={handleSaveCurrentProfile}
         onCancel={() => { setSaveModalOpen(false); setSaveName(''); }}
-        okText="保存"
+        okText={t('common.save')}
         confirmLoading={saving}
       >
         <Space direction="vertical" style={{ width: '100%' }}>
           <Alert
             type="info"
             showIcon
-            message="隐私提示"
-            description="画像仅保存在您的账户中，仅您本人可见，不会被公开或用于其他用途；可随时在本页编辑或删除。"
+            message={t('common.privacyTitle')}
+            description={t('account.privacyBody')}
           />
           <div>
-            <Text strong>画像名称</Text>
+            <Text strong>{t('common.profileName')}</Text>
             <Input
-              placeholder="如：2026年家庭保障方案"
+              placeholder={t('common.profilePlaceholder')}
               value={saveName}
               onChange={(e) => setSaveName(e.target.value)}
               maxLength={120}
@@ -208,7 +210,7 @@ export default function AccountPage() {
         </Space>
       </Modal>
       <Modal
-        title="编辑画像"
+        title={t('account.editTitle')}
         open={editModalOpen}
         onOk={handleSaveEdit}
         onCancel={() => { setEditModalOpen(false); setEditingProfile(null); }}
@@ -216,14 +218,14 @@ export default function AccountPage() {
         {editingProfile && (
           <Space direction="vertical" style={{ width: '100%' }}>
             <div>
-              <Text strong>名称</Text>
+              <Text strong>{t('common.name')}</Text>
               <Input
                 value={editingProfile.name}
                 onChange={(e) => setEditingProfile({ ...editingProfile, name: e.target.value })}
               />
             </div>
             <div>
-              <Text strong>备注</Text>
+              <Text strong>{t('common.note')}</Text>
               <Input.TextArea
                 value={editingProfile.note || ''}
                 onChange={(e) => setEditingProfile({ ...editingProfile, note: e.target.value })}

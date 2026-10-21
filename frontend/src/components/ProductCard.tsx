@@ -2,6 +2,8 @@
 import ScoreRadar from './ScoreRadar';
 import RiskBadge from './RiskBadge';
 import type { ProductItem } from '../types';
+import { useI18n } from '../i18n';
+import type { MessageKey } from '../i18n/messages';
 
 const { Text } = Typography;
 
@@ -11,19 +13,19 @@ const LAYER_COLORS: Record<string, string> = {
   supplement: 'green',
 };
 
-const LAYER_LABELS: Record<string, string> = {
-  basic: '基础层（必备）',
-  core: '核心层（建议）',
-  supplement: '补充层（按需）',
+const LAYER_LABEL_KEYS: Record<string, MessageKey> = {
+  basic: 'layer.basic',
+  core: 'layer.core',
+  supplement: 'layer.supplement',
 };
 
-function formatPremium(min: number, max: number | null): string {
+function formatPremium(min: number, max: number | null, fromSuffix: string): string {
   if (max != null && max > min) {
     return `¥${min.toLocaleString()}-¥${max.toLocaleString()}`;
   }
   // 上限未披露（max 为 null）时保留「起」：结果页顶部的口径说明正是以「起」告知
   // 用户该数字不是精确报价，单个产品卡也必须一致，否则会被读成确定价格。
-  return `¥${min.toLocaleString()}${max == null ? '起' : ''}`;
+  return `¥${min.toLocaleString()}${max == null ? fromSuffix : ''}`;
 }
 
 interface Props {
@@ -31,6 +33,7 @@ interface Props {
 }
 
 export default function ProductCard({ product }: Props) {
+  const { t } = useI18n();
   const scoreColor = product.score >= 80 ? '#52c41a' : product.score >= 60 ? '#faad14' : '#ff4d4f';
 
   return (
@@ -41,16 +44,16 @@ export default function ProductCard({ product }: Props) {
         <span>
           <Text strong>{product.name}</Text>
           <Tag color={LAYER_COLORS[product.layer]} style={{ marginLeft: 8, fontSize: 11 }}>
-            {LAYER_LABELS[product.layer]}
+            {t(LAYER_LABEL_KEYS[product.layer])}
           </Tag>
           {product.official_verified && (
-            <Tag color="green" style={{ fontSize: 11 }}>官网已验证</Tag>
+            <Tag color="green" style={{ fontSize: 11 }}>{t('common.officialVerified')}</Tag>
           )}
           {product.dual_source_verified && (
-            <Tag color="geekblue" style={{ fontSize: 11 }}>双源验证</Tag>
+            <Tag color="geekblue" style={{ fontSize: 11 }}>{t('common.dualVerified')}</Tag>
           )}
           {product.data_stale && (
-            <Tag color="orange" style={{ fontSize: 11 }}>信息超90天未复核</Tag>
+            <Tag color="orange" style={{ fontSize: 11 }}>{t('common.stale')}</Tag>
           )}
         </span>
       }
@@ -64,7 +67,7 @@ export default function ProductCard({ product }: Props) {
               {' · '}
               {/* official=承保公司官网；aggregator=聚合站真实产品详情页 */}
               <a href={product.source_url} target="_blank" rel="noopener noreferrer">
-                {product.source_type === 'aggregator' ? '产品页' : '官网'}
+                {product.source_type === 'aggregator' ? t('common.sourceAggregator') : t('common.sourceOfficial')}
               </a>
             </>
           )}
@@ -72,29 +75,31 @@ export default function ProductCard({ product }: Props) {
             <>
               {' · '}
               <a href={product.third_party_review_url} target="_blank" rel="noopener noreferrer">
-                第三方测评
+                {t('common.reviewLink')}
               </a>
             </>
           )}
         </Text>
         <span>
-          <Text style={{ fontSize: 13 }}>年保费 </Text>
-          <Text strong style={{ fontSize: 15, color: '#1677ff' }}>{formatPremium(product.premium, product.premium_max)}</Text>
+          <Text style={{ fontSize: 13 }}>{t('product.annualPremium')}</Text>
+          <Text strong style={{ fontSize: 15, color: '#1677ff' }}>
+            {formatPremium(product.premium, product.premium_max, t('common.fromSuffix'))}
+          </Text>
         </span>
         {product.deductible != null && product.deductible > 0 && (
           <span>
-            <Text style={{ fontSize: 13 }}>免赔额 </Text>
-            <Text strong>{product.deductible.toLocaleString()}元</Text>
+            <Text style={{ fontSize: 13 }}>{t('product.deductible')}</Text>
+            <Text strong>{product.deductible.toLocaleString()}{t('common.unitYuan')}</Text>
           </span>
         )}
         <span>
-          <Text style={{ fontSize: 13 }}>保额 </Text>
-          <Text strong>{product.sum_insured > 0 ? `${product.sum_insured}万` : '-'}</Text>
+          <Text style={{ fontSize: 13 }}>{t('product.sumInsured')}</Text>
+          <Text strong>{product.sum_insured > 0 ? `${product.sum_insured}${t('common.unitWan')}` : '-'}</Text>
         </span>
         <span>
-          <Text style={{ fontSize: 13 }}>综合评分 </Text>
+          <Text style={{ fontSize: 13 }}>{t('product.score')}</Text>
           <span style={{ fontWeight: 700, fontSize: 15, color: scoreColor }}>
-            {product.score.toFixed(0)}<span style={{ fontSize: 10, color: '#999' }}>/100</span>
+            {product.score.toFixed(0)}<span style={{ fontSize: 10, color: '#999' }}>{t('common.scoreOutOf')}</span>
           </span>
         </span>
       </div>

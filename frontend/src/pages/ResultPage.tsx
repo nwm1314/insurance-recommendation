@@ -10,10 +10,12 @@ import Disclaimer from '../components/Disclaimer';
 import { fetchRecommend } from '../api/recommend';
 import { fetchRecommendationDetail, saveProfile } from '../api/auth';
 import type { UserProfile, RecommendationResult, ProductItem } from '../types';
+import { useI18n } from '../i18n';
 
 const { Title, Text, Paragraph } = Typography;
 
 export default function ResultPage() {
+  const { t } = useI18n();
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -40,10 +42,10 @@ export default function ResultPage() {
       const axiosErr = err as { response?: { data?: { detail?: unknown } }; message?: string };
       const detail = axiosErr.response?.data?.detail;
       const msg = Array.isArray(detail)
-        ? `请返回上页完善信息：${detail.map((d: { loc: string[]; msg: string }) => d.msg).join('；')}`
+        ? t('result.validationFailed', { detail: detail.map((d: { loc: string[]; msg: string }) => d.msg).join('；') })
         : typeof detail === 'string'
           ? detail
-          : (axiosErr.message || '推荐服务异常，请稍后重试');
+          : (axiosErr.message || t('result.serviceError'));
       setError(msg);
     } finally {
       setLoading(false);
@@ -87,13 +89,13 @@ export default function ResultPage() {
         if (historyRequestRef.current?.requestVersion !== requestVersion) return;
         const status = (err as { response?: { status?: number } }).response?.status;
         if (status === 404) {
-          setError('该推荐记录不存在或已被删除');
+          setError(t('result.recordMissing'));
         } else if (status === 403) {
-          setError('您无权查看该推荐记录');
+          setError(t('result.recordForbidden'));
         } else if (status === 401) {
-          setError('请先登录后再查看推荐记录');
+          setError(t('result.recordUnauthorized'));
         } else {
-          setError('推荐记录加载失败，请稍后重试');
+          setError(t('result.recordFailed'));
         }
       } finally {
         if (historyRequestRef.current?.requestVersion === requestVersion) setLoading(false);
@@ -105,36 +107,36 @@ export default function ResultPage() {
     if (!profile) return;
     setSaving(true);
     try {
-      await saveProfile(saveName.trim() || '未命名画像', profile as unknown as Record<string, unknown>);
+      await saveProfile(saveName.trim() || t('common.unnamedProfile'), profile as unknown as Record<string, unknown>);
       setSaveModalOpen(false);
       setSaveName('');
-      message.success('画像已保存，可在“我的账户”中管理');
+      message.success(t('result.savedProfileOk'));
     } catch {
-      message.error('画像保存失败，请稍后重试');
+      message.error(t('result.savedProfileFailed'));
     } finally {
       setSaving(false);
     }
   };
 
   if (loading) {
-    return <div style={{ padding: 40, textAlign: 'center' }}><Spin size="large" tip="正在加载..." /></div>;
+    return <div style={{ padding: 40, textAlign: 'center' }}><Spin size="large" tip={t('common.loading')} /></div>;
   }
   if (error) {
     return (
       <div style={{ maxWidth: 520, margin: '80px auto' }}>
         <Result
           status="error"
-          title="加载失败"
+          title={t('result.loadingFailed')}
           subTitle={error}
           extra={[
-            <Button key="back" type="primary" onClick={() => navigate('/')}>返回首页</Button>,
-            <Button key="retry" onClick={() => { if (profile) { doRecommend(); } else { window.location.reload(); } }}>重新尝试</Button>,
+            <Button key="back" type="primary" onClick={() => navigate('/')}>{t('common.backHome')}</Button>,
+            <Button key="retry" onClick={() => { if (profile) { doRecommend(); } else { window.location.reload(); } }}>{t('common.retry')}</Button>,
           ]}
         />
       </div>
     );
   }
-  if (!profile) return <div style={{ padding: 40, textAlign: 'center' }}>请先填写问卷信息</div>;
+  if (!profile) return <div style={{ padding: 40, textAlign: 'center' }}>{t('result.needProfile')}</div>;
   if (!result) return null;
 
   const allProducts: ProductItem[] = [...new Map(
@@ -157,46 +159,46 @@ export default function ResultPage() {
     if (pkg.total_premium_max != null && pkg.total_premium_max > pkg.total_premium) {
       return `¥${pkg.total_premium.toLocaleString()}~¥${pkg.total_premium_max.toLocaleString()}`;
     }
-    return `¥${pkg.total_premium.toLocaleString()}起`;
+    return `¥${pkg.total_premium.toLocaleString()}${t('common.fromSuffix')}`;
   };
 
   // DEV-004：缓存命中时结果仍是"上次成功的 AI 结果"，但当前 LLM 可用性未经本次
   // 验证。因此不能只显示"AI 精排模式"——需明确标注来自缓存，避免用户误以为本次
   // 一定调用了大模型。（不改变降级语义：LLM 失败仍然降级为规则模式。）
   const engineModeLabel = result.engine_mode === 'ai'
-    ? (result.ai_from_cache ? 'AI 精排模式（缓存结果）' : 'AI 精排模式')
-    : result.engine_mode === 'degraded' ? '降级模式（AI 繁忙，已自动切换）' : '极速规则模式';
+    ? (result.ai_from_cache ? t('result.engineAiCached') : t('result.engineAi'))
+    : result.engine_mode === 'degraded' ? t('result.engineDegraded') : t('result.engineRule');
   const engineModeTip = result.engine_mode === 'ai' && result.ai_from_cache
-    ? '当前展示的是此前相同条件下已生成的 AI 精排结果（短期缓存），未重新调用大模型；如需重新生成可点击"重新推荐"。'
+    ? t('result.engineCacheTip')
     : undefined;
   const reasonCodeLabel = (code: string) => ({
-    inactive: '停售',
-    type_forbidden: '硬规则禁推',
-    type_not_in_plan: '不在方案层级',
-    age_not_allowed: '年龄不符',
-    job_class_not_allowed: '职业不符',
-    over_budget: '预算不足',
-    unknown: '其他',
+    inactive: t('result.reasonInactive'),
+    type_forbidden: t('result.reasonTypeForbidden'),
+    type_not_in_plan: t('result.reasonNotInPlan'),
+    age_not_allowed: t('result.reasonAge'),
+    job_class_not_allowed: t('result.reasonJobClass'),
+    over_budget: t('result.reasonBudget'),
+    unknown: t('result.reasonOther'),
   }[code] || code);
 
   return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 16px' }}>
       <div className="result-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
-          <Title level={3} style={{ margin: 0 }}>推荐方案</Title>
+          <Title level={3} style={{ margin: 0 }}>{t('result.title')}</Title>
           <Tag color={result.engine_mode === 'ai' ? 'blue' : result.engine_mode === 'degraded' ? 'orange' : 'green'} style={{ marginTop: 4 }}>
             {engineModeTip ? <Tooltip title={engineModeTip}><span>{engineModeLabel}</span></Tooltip> : engineModeLabel}
           </Tag>
         </div>
         <Space>
-          <Button icon={<SaveOutlined />} onClick={() => setSaveModalOpen(true)}>保存画像</Button>
-          <Button icon={<ReloadOutlined />} onClick={doRecommend}>重新推荐</Button>
-          <Button icon={<EditOutlined />} onClick={() => navigate('/', { state: { profile } })}>修改信息</Button>
+          <Button icon={<SaveOutlined />} onClick={() => setSaveModalOpen(true)}>{t('result.saveProfile')}</Button>
+          <Button icon={<ReloadOutlined />} onClick={doRecommend}>{t('result.rerun')}</Button>
+          <Button icon={<EditOutlined />} onClick={() => navigate('/', { state: { profile } })}>{t('result.editProfile')}</Button>
         </Space>
       </div>
       <Divider style={{ margin: '0 0 16px' }} />
       <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
-        保费为产品报价区间（区间下限~上限）；预算建议为估算值。标注「起」表示该产品未披露保费上限，最终价格以核保结论与官方条款为准。
+        {t('result.premiumNote')}
       </Text>
 
       <Row gutter={16} style={{ marginTop: 16 }}>
@@ -211,7 +213,7 @@ export default function ResultPage() {
           />
         </Col>
         <Col xs={24} sm={12}>
-          <Card title="建议保额" size="small">
+          <Card title={t('result.sumInsuredCard')} size="small">
             <Row gutter={[8, 8]}>
               {[
                 { label: '医疗险', value: result.sum_insured_advice.medical, note: '报销型·百万医疗标配' },
@@ -224,7 +226,7 @@ export default function ResultPage() {
                   <div style={{ marginBottom: 8 }}>
                     <Text type="secondary" style={{ fontSize: 11 }}>{item.label}</Text>
                     <div style={{ fontWeight: 700, fontSize: 17, color: '#1677ff' }}>
-                      {(item.value / 10000).toFixed(0)}<span style={{ fontSize: 12, fontWeight: 400 }}>万</span>
+                      {(item.value / 10000).toFixed(0)}<span style={{ fontSize: 12, fontWeight: 400 }}>{t('common.unitWan')}</span>
                     </div>
                     <Text type="secondary" style={{ fontSize: 10 }}>{item.note}</Text>
                   </div>
@@ -236,13 +238,13 @@ export default function ResultPage() {
       </Row>
 
       {(unknownConditions.length > 0 || markedTypes.length > 0) && (
-        <Card title="画像评估提示" size="small" style={{ marginTop: 16 }}>
+        <Card title={t('result.assessmentTitle')} size="small" style={{ marginTop: 16 }}>
           {unknownConditions.length > 0 && (
             <Alert
               type="warning"
               showIcon
-              message="未识别健康项"
-              description={`${unknownConditions.join('、')}：该健康项本次仅作记录展示，不参与规则筛选，也不构成承保判断；如需核保结论，请以产品健康告知和保险公司核保为准。`}
+              message={t('result.unknownHealthTitle')}
+              description={t('result.unknownHealthBody', { items: unknownConditions.join('、') })}
               style={{ marginBottom: markedTypes.length > 0 ? 12 : 0 }}
             />
           )}
@@ -250,8 +252,8 @@ export default function ResultPage() {
             <Alert
               type="info"
               showIcon
-              message="重复保障提示"
-              description={`检测到已有保障（${coverageLabelText || markedTypes.join('、')}），以下险种可能与既有保单责任重叠：${markedTypes.join('、')}。建议加保前先核对既有保单条款，本提示不构成承保判断。`}
+              message={t('result.overlapTitle')}
+              description={t('result.overlapBody', { labels: coverageLabelText || markedTypes.join('、'), types: markedTypes.join('、') })}
             />
           )}
         </Card>
@@ -264,12 +266,12 @@ export default function ResultPage() {
       )}
 
       {result.ai_explanation && (
-        <Card title="AI 结构化解释" size="small" style={{ marginTop: 16 }}>
+        <Card title={t('result.aiExplanation')} size="small" style={{ marginTop: 16 }}>
           {result.ai_explanation.summary && <Paragraph>{result.ai_explanation.summary}</Paragraph>}
           <Row gutter={12}>
             {result.ai_explanation.reasoning.length > 0 && (
               <Col xs={24} md={8}>
-                <Text strong>推荐理由</Text>
+                <Text strong>{t('result.aiReasoning')}</Text>
                 <ul style={{ paddingLeft: 18, marginBottom: 0 }}>
                   {result.ai_explanation.reasoning.map((item) => <li key={item}>{item}</li>)}
                 </ul>
@@ -277,7 +279,7 @@ export default function ResultPage() {
             )}
             {result.ai_explanation.comparison_notes.length > 0 && (
               <Col xs={24} md={8}>
-                <Text strong>对比说明</Text>
+                <Text strong>{t('result.aiComparison')}</Text>
                 <ul style={{ paddingLeft: 18, marginBottom: 0 }}>
                   {result.ai_explanation.comparison_notes.map((item) => <li key={item}>{item}</li>)}
                 </ul>
@@ -285,7 +287,7 @@ export default function ResultPage() {
             )}
             {result.ai_explanation.risk_notes.length > 0 && (
               <Col xs={24} md={8}>
-                <Text strong>注意事项</Text>
+                <Text strong>{t('result.aiRisks')}</Text>
                 <ul style={{ paddingLeft: 18, marginBottom: 0 }}>
                   {result.ai_explanation.risk_notes.map((item) => <li key={item}>{item}</li>)}
                 </ul>
@@ -296,12 +298,12 @@ export default function ResultPage() {
       )}
 
       {(result.hard_rule_summary.length > 0 || result.coverage_gap_summary.length > 0 || result.not_recommended_summary.length > 0) && (
-        <Card title="推荐解释" size="small" style={{ marginTop: 16 }}>
+        <Card title={t('result.explainTitle')} size="small" style={{ marginTop: 16 }}>
           {result.hard_rule_summary.length > 0 && (
             <Alert
               type="success"
               showIcon
-              message="硬性规则已先执行"
+              message={t('result.hardRulesTitle')}
               description={result.hard_rule_summary.join('；')}
               style={{ marginBottom: 12 }}
             />
@@ -310,7 +312,7 @@ export default function ResultPage() {
             <Alert
               type="warning"
               showIcon
-              message="保障缺口提示"
+              message={t('result.gapTitle')}
               description={result.coverage_gap_summary.join('；')}
               style={{ marginBottom: result.not_recommended_summary.length > 0 ? 12 : 0 }}
             />
@@ -320,8 +322,8 @@ export default function ResultPage() {
               <Alert
                 type="info"
                 showIcon
-                message="未推荐原因"
-                description={result.not_recommended_summary.map((item) => `${reasonCodeLabel(item.reason_code)}：${item.count}款`).join('；')}
+                message={t('result.notRecommendedTitle')}
+                description={result.not_recommended_summary.map((item) => `${reasonCodeLabel(item.reason_code)}${t('common.listSeparator')}${t('result.notRecommendedCount', { count: item.count })}`).join('；')}
                 style={{ marginBottom: result.not_recommended_details.length > 0 ? 12 : 0 }}
               />
               {result.not_recommended_details.length > 0 && (
@@ -330,7 +332,7 @@ export default function ResultPage() {
                   items={[
                     {
                       key: 'not-recommended-details',
-                      label: `查看未推荐产品明细（最多展示 ${result.not_recommended_details.length} 款）`,
+                      label: t('result.notRecommendedDetails', { count: result.not_recommended_details.length }),
                       children: (
                         <Table
                           size="small"
@@ -338,10 +340,10 @@ export default function ResultPage() {
                           pagination={false}
                           dataSource={result.not_recommended_details}
                           columns={[
-                            { title: '产品', dataIndex: 'name', key: 'name' },
-                            { title: '险种', dataIndex: 'type', key: 'type', width: 100 },
-                            { title: '原因类型', dataIndex: 'reason_code', key: 'reason_code', width: 120, render: (code: string) => reasonCodeLabel(code) },
-                            { title: '未推荐原因', dataIndex: 'reason', key: 'reason' },
+                            { title: t('result.colProduct'), dataIndex: 'name', key: 'name' },
+                            { title: t('result.colType'), dataIndex: 'type', key: 'type', width: 100 },
+                            { title: t('result.colReasonCode'), dataIndex: 'reason_code', key: 'reason_code', width: 120, render: (code: string) => reasonCodeLabel(code) },
+                            { title: t('result.colReason'), dataIndex: 'reason', key: 'reason' },
                           ]}
                         />
                       ),
@@ -358,24 +360,24 @@ export default function ResultPage() {
         style={{ marginTop: 16 }}
         items={result.packages.map((pkg) => ({
           key: pkg.tag,
-          label: `${pkg.tag_label} (${formatPkgTotal(pkg)}/年)`,
+          label: `${pkg.tag_label} (${formatPkgTotal(pkg)}${t('home.perYearSuffix')})`,
           children: (
             <div>
               <Card size="small" style={{ marginBottom: 12 }}>
                 <Row gutter={16} align="middle">
                   <Col xs={24} sm={8}>
-                    <Text type="secondary">预算利用率</Text>
+                    <Text type="secondary">{t('result.utilization')}</Text>
                     <Progress percent={Math.round(pkg.budget_utilization * 100)} size="small" />
                   </Col>
                   <Col xs={24} sm={8}>
-                    <Text type="secondary">方案完整度</Text>
+                    <Text type="secondary">{t('result.completeness')}</Text>
                     <Progress percent={Math.round(pkg.completeness_score * 100)} size="small" status={pkg.completeness_score >= 0.8 ? 'success' : 'active'} />
                   </Col>
                   <Col xs={24} sm={8}>
                     {pkg.coverage_gap_notes.length > 0 ? (
                       <Text type="warning">{pkg.coverage_gap_notes.join('；')}</Text>
                     ) : (
-                      <Text type="success">当前方案主要保障层配置完整</Text>
+                      <Text type="success">{t('result.packageComplete')}</Text>
                     )}
                   </Col>
                 </Row>
@@ -385,7 +387,7 @@ export default function ResultPage() {
                   <ProductCard product={p} />
                   {p.recommendation_reasons.length > 0 && (
                     <Card size="small" style={{ margin: '-8px 0 12px' }}>
-                      <Text type="secondary">推荐理由：</Text>
+                      <Text type="secondary">{t('result.reasonsLabel')}</Text>
                       <Space wrap style={{ marginLeft: 8 }}>
                         {p.recommendation_reasons.map((reason) => <Tag key={reason} color="blue">{reason}</Tag>)}
                       </Space>
@@ -398,32 +400,31 @@ export default function ResultPage() {
         }))}
       />
 
-      <Card title="横向对比" style={{ marginTop: 16 }}>
+      <Card title={t('result.compareTitle')} style={{ marginTop: 16 }}>
         <CompareTable products={allProducts} />
       </Card>
 
       {/* OPEN-001（方案 1 + 局部增强）：本期不接入投保跳转与留资，改为把"拿到方案
           之后该做什么"写清楚。文案边界：不承诺承保、不称区间为报价、明确引擎只在
           已审核产品池内做筛选与排序。 */}
-      <Card title="下一步怎么做" size="small" style={{ marginTop: 16 }}>
+      <Card title={t('result.nextStepsTitle')} size="small" style={{ marginTop: 16 }}>
         <Paragraph style={{ marginBottom: 12 }}>
           <Text type="secondary">
-            本工具是辅助决策工具：只在已审核的产品池内按您填写的画像筛选、排序并解释，
-            不提供实时核保，也不出具有效报价。评分与排序仅代表与您的匹配度，不代表保险公司会承保。
+            {t('result.nextStepsIntro')}
           </Text>
         </Paragraph>
         <ol style={{ paddingLeft: 20, margin: 0 }}>
           <li style={{ marginBottom: 8 }}>
-            <Text strong>核对产品来源</Text>
-            <Text>：点击产品卡或横向对比表中的「产品页 / 官网」链接查看来源页，保险条款、保障责任与免责以保险公司官方版本为准。</Text>
+            <Text strong>{t('result.nextStep1Title')}</Text>
+            <Text>{t('result.nextStep1Body')}</Text>
           </li>
           <li style={{ marginBottom: 8 }}>
-            <Text strong>逐项核对健康告知</Text>
-            <Text>：按官方健康告知逐项确认；有异常项时走智能核保或人工核保，最终以保险公司核保结论为准。</Text>
+            <Text strong>{t('result.nextStep2Title')}</Text>
+            <Text>{t('result.nextStep2Body')}</Text>
           </li>
           <li>
-            <Text strong>投保前先咨询</Text>
-            <Text>：就保费、保额与免责条款向保险公司官方客服确认后再投保。本工具不代收保费、不代办投保。</Text>
+            <Text strong>{t('result.nextStep3Title')}</Text>
+            <Text>{t('result.nextStep3Body')}</Text>
           </li>
         </ol>
       </Card>
@@ -431,24 +432,24 @@ export default function ResultPage() {
       <Disclaimer />
 
       <Modal
-        title="保存健康画像"
+        title={t('common.saveHealthProfile')}
         open={saveModalOpen}
         onOk={handleSaveProfile}
         onCancel={() => { setSaveModalOpen(false); setSaveName(''); }}
-        okText="保存"
+        okText={t('common.save')}
         confirmLoading={saving}
       >
         <Space direction="vertical" style={{ width: '100%' }}>
           <Alert
             type="info"
             showIcon
-            message="隐私提示"
-            description="画像仅保存在您的账户中，仅您本人可见，不会被公开或用于其他用途；可随时在“我的账户”中编辑或删除。"
+            message={t('common.privacyTitle')}
+            description={t('result.privacyBody')}
           />
           <div>
-            <Text strong>画像名称</Text>
+            <Text strong>{t('common.profileName')}</Text>
             <Input
-              placeholder="如：2026年家庭保障方案"
+              placeholder={t('common.profilePlaceholder')}
               value={saveName}
               onChange={(e) => setSaveName(e.target.value)}
               maxLength={120}

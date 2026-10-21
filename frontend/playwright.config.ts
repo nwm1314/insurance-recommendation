@@ -19,6 +19,10 @@ export default defineConfig({
   outputDir: 'test-results',
   use: {
     baseURL: `http://localhost:${PORT}`,
+    // The UI defaults to Chinese for zh browsers and English otherwise. Pin the
+    // browser locale so the suite is deterministic and the existing Chinese
+    // assertions keep testing the default (zh-CN) interface.
+    locale: 'zh-CN',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',

@@ -4,6 +4,7 @@ import { Button, Drawer, Layout, Menu, Result, Spin, Typography } from 'antd';
 import { HomeOutlined, LoginOutlined, MenuOutlined, SearchOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
 import ProtectedRoute from './components/ProtectedRoute';
 import { getStoredUser } from './api/auth';
+import { useI18n } from './i18n';
 import './mobile-responsive.css';
 
 const { Header, Content, Footer } = Layout;
@@ -25,15 +26,24 @@ const RegisterPage = lazy(() => retryable(() => import('./pages/RegisterPage')))
 const AccountPage = lazy(() => retryable(() => import('./pages/AccountPage')));
 
 function RouteFallback() {
+  const { t } = useI18n();
   return (
-    <div role="status" aria-label="页面加载中" style={{ display: 'flex', justifyContent: 'center', padding: '64px 0' }}>
+    <div role="status" aria-label={t('error.loading')} style={{ display: 'flex', justifyContent: 'center', padding: '64px 0' }}>
       <Spin size="large" />
     </div>
   );
 }
 
+interface BoundaryProps {
+  children: ReactNode;
+  title: string;
+  subtitle: string;
+  reloadLabel: string;
+}
+
 // 懒加载 chunk 加载失败时兜底：提示 + 重新加载（重试由 retryable 与整页刷新共同覆盖）。
-class RouteErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+// 错误边界必须是 class 组件，因此文案通过 props 传入而不是在这里取 hook。
+class RouteErrorBoundary extends Component<BoundaryProps, { failed: boolean }> {
   state = { failed: false };
 
   static getDerivedStateFromError() {
@@ -45,9 +55,9 @@ class RouteErrorBoundary extends Component<{ children: ReactNode }, { failed: bo
       return (
         <Result
           status="warning"
-          title="页面加载失败"
-          subTitle="网络异常或页面资源加载失败，请重试。"
-          extra={<Button type="primary" onClick={() => window.location.reload()}>重新加载</Button>}
+          title={this.props.title}
+          subTitle={this.props.subtitle}
+          extra={<Button type="primary" onClick={() => window.location.reload()}>{this.props.reloadLabel}</Button>}
         />
       );
     }
@@ -56,6 +66,7 @@ class RouteErrorBoundary extends Component<{ children: ReactNode }, { failed: bo
 }
 
 export default function App() {
+  const { t, locale, toggleLocale } = useI18n();
   const location = useLocation();
   const [user, setUser] = useState(() => getStoredUser());
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -79,11 +90,11 @@ export default function App() {
     : 'home';
 
   const navItems = [
-    { key: 'home', icon: <HomeOutlined />, label: <Link to="/" onClick={() => setDrawerOpen(false)}>填写问卷</Link> },
-    { key: 'result', icon: <SearchOutlined />, label: <Link to="/result" onClick={() => setDrawerOpen(false)}>推荐结果</Link> },
-    user ? { key: 'account', icon: <UserOutlined />, label: <Link to="/account" onClick={() => setDrawerOpen(false)}>我的账号</Link> } : null,
-    canUseAdmin ? { key: 'admin', icon: <SettingOutlined />, label: <Link to="/admin" onClick={() => setDrawerOpen(false)}>管理后台</Link> } : null,
-    user ? null : { key: 'login', icon: <LoginOutlined />, label: <Link to="/login" onClick={() => setDrawerOpen(false)}>登录/注册</Link> },
+    { key: 'home', icon: <HomeOutlined />, label: <Link to="/" onClick={() => setDrawerOpen(false)}>{t('nav.home')}</Link> },
+    { key: 'result', icon: <SearchOutlined />, label: <Link to="/result" onClick={() => setDrawerOpen(false)}>{t('nav.result')}</Link> },
+    user ? { key: 'account', icon: <UserOutlined />, label: <Link to="/account" onClick={() => setDrawerOpen(false)}>{t('nav.account')}</Link> } : null,
+    canUseAdmin ? { key: 'admin', icon: <SettingOutlined />, label: <Link to="/admin" onClick={() => setDrawerOpen(false)}>{t('nav.admin')}</Link> } : null,
+    user ? null : { key: 'login', icon: <LoginOutlined />, label: <Link to="/login" onClick={() => setDrawerOpen(false)}>{t('nav.login')}</Link> },
   ].filter(Boolean);
 
   return (
@@ -95,19 +106,28 @@ export default function App() {
             background: 'linear-gradient(135deg, #1677ff, #69b1ff)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: '#fff', fontWeight: 700, fontSize: 16,
-          }}>保</div>
+          }}>{t('app.brandMark')}</div>
           <Typography.Text style={{ color: '#fff', fontWeight: 600, fontSize: 16, whiteSpace: 'nowrap' }}>
-            智能保险推荐
+            {t('app.title')}
           </Typography.Text>
         </Link>
         <Menu className="desktop-menu" theme="dark" mode="horizontal" selectedKeys={[selectedKey]} style={{ flex: 1, minWidth: 0 }}
           items={navItems}
         />
+        <Button
+          type="text"
+          onClick={toggleLocale}
+          title={t('nav.switchLanguageTitle')}
+          aria-label={t('nav.switchLanguageTitle')}
+          style={{ color: '#fff', marginLeft: 8, paddingInline: 8 }}
+        >
+          {locale === 'zh-CN' ? t('nav.switchToEnglish') : t('nav.switchToChinese')}
+        </Button>
         <Button className="mobile-menu-button" type="text" icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)} />
       </Header>
       <Drawer
         className="mobile-drawer"
-        title="菜单"
+        title={t('nav.menu')}
         placement="right"
         onClose={() => setDrawerOpen(false)}
         open={drawerOpen}
@@ -115,7 +135,11 @@ export default function App() {
         <Menu mode="inline" selectedKeys={[selectedKey]} items={navItems} />
       </Drawer>
       <Content style={{ padding: '24px', maxWidth: 1040, margin: '0 auto', width: '100%' }}>
-        <RouteErrorBoundary>
+        <RouteErrorBoundary
+          title={t('error.loadTitle')}
+          subtitle={t('error.loadSubtitle')}
+          reloadLabel={t('error.reload')}
+        >
           <Suspense fallback={<RouteFallback />}>
             <Routes>
               <Route path="/" element={<HomePage />} />
@@ -129,7 +153,7 @@ export default function App() {
         </RouteErrorBoundary>
       </Content>
       <Footer style={{ textAlign: 'center', color: '#999', fontSize: 12, padding: '12px' }}>
-        本工具生成方案仅供参考，最终承保以保险公司官方条款为准。数据来源：慧择网、开心保、中民保险网及各保险公司官网
+        {t('footer.text')}
       </Footer>
     </Layout>
   );

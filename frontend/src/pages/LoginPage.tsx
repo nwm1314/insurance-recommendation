@@ -2,10 +2,12 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button, Card, Form, Input, Typography, message } from 'antd';
 import { login } from '../api/auth';
+import { useI18n } from '../i18n';
 
 const { Text, Title } = Typography;
 
 export default function LoginPage() {
+  const { t } = useI18n();
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -13,30 +15,30 @@ export default function LoginPage() {
 
   return (
     <Card style={{ maxWidth: 420, margin: '48px auto', padding: '0 16px' }}>
-      <Title level={3}>登录账号</Title>
-      <Text type="secondary">登录后可保存推荐历史，并按权限访问管理后台。</Text>
+      <Title level={3}>{t('auth.loginTitle')}</Title>
+      <Text type="secondary">{t('auth.loginSubtitle')}</Text>
       <Form layout="vertical" style={{ marginTop: 24 }} onFinish={async (values) => {
         setLoading(true);
         try {
           await login(values.email, values.password);
-          message.success('登录成功');
+          message.success(t('auth.loginSuccess'));
           navigate(from, { replace: true });
         } catch {
-          message.error('邮箱或密码错误');
+          message.error(t('auth.loginFailed'));
         } finally {
           setLoading(false);
         }
       }}>
-        <Form.Item name="email" label="邮箱" rules={[{ required: true }, { type: 'email' }]}>
+        <Form.Item name="email" label={t('auth.email')} rules={[{ required: true }, { type: 'email' }]}>
           <Input autoComplete="email" />
         </Form.Item>
-        <Form.Item name="password" label="密码" rules={[{ required: true }]}>
+        <Form.Item name="password" label={t('auth.password')} rules={[{ required: true }]}>
           <Input.Password autoComplete="current-password" />
         </Form.Item>
-        <Button type="primary" htmlType="submit" loading={loading} block>登录</Button>
+        <Button type="primary" htmlType="submit" loading={loading} block>{t('auth.loginButton')}</Button>
       </Form>
       <Text type="secondary" style={{ display: 'block', marginTop: 16 }}>
-        还没有账号？<Link to="/register">注册</Link>
+        {t('auth.noAccount')}<Link to="/register">{t('auth.registerLink')}</Link>
       </Text>
     </Card>
   );

@@ -4,6 +4,8 @@ import { Form, InputNumber, Select, AutoComplete, Radio, Checkbox, Slider, Butto
 import { QuestionCircleOutlined, MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import ProgressSteps from '../components/ProgressSteps';
 import EngineSwitch from '../components/EngineSwitch';
+import { useI18n } from '../i18n';
+import type { MessageKey } from '../i18n/messages';
 import { fetchProfileDetail } from '../api/auth';
 import type { UserProfile, ExistingPolicy } from '../types';
 
@@ -107,7 +109,7 @@ const HEALTH_OPTIONS: HealthOption[] = [
 ];
 
 const LEVEL_COLORS: Record<number, string> = { 1: 'green', 2: 'orange', 3: 'red' };
-const LEVEL_LABELS: Record<number, string> = { 1: '轻度', 2: '中度', 3: '重度' };
+const LEVEL_LABEL_KEYS = { 1: 'home.levelMild', 2: 'home.levelModerate', 3: 'home.levelSevere' } as const;
 
 // 保险公司按梯队分组（与后端种子数据一致）
 interface CompanyOption { label: string; value: string; tier: number; }
@@ -138,7 +140,7 @@ const COMPANY_OPTIONS: CompanyOption[] = [
 ];
 
 const TIER_COLORS: Record<number, string> = { 1: 'blue', 2: 'purple', 3: 'orange' };
-const TIER_LABELS: Record<number, string> = { 1: '老牌大厂', 2: '合资险企', 3: '互联网/高性价比' };
+const TIER_LABEL_KEYS: Record<number, MessageKey> = { 1: 'home.tier1', 2: 'home.tier2', 3: 'home.tier3' };
 
 // REC-001 常见职业提示（关键词与后端 occupations.yaml 保持一致）；选择后自动带出
 // 等级，用户也可改选手动等级或直接输入其他职业名称（由后端关键词解析）
@@ -167,12 +169,12 @@ const OCCUPATION_OPTIONS: OccupationHint[] = [
   { label: '高空作业人员', value: '高空作业', cls: 6 },
 ];
 
-const SOCIAL_INSURANCE_OPTIONS = [
-  { label: '无社保', value: 'none' },
-  { label: '职工社保', value: 'employee' },
-  { label: '居民医保', value: 'resident' },
-  { label: '新农合', value: 'new_rural' },
-];
+const SOCIAL_INSURANCE_OPTION_KEYS = [
+  { labelKey: 'home.socialNone', value: 'none' },
+  { labelKey: 'home.socialEmployee', value: 'employee' },
+  { labelKey: 'home.socialResident', value: 'resident' },
+  { labelKey: 'home.socialNewRural', value: 'new_rural' },
+] as const;
 
 const POLICY_TYPE_OPTIONS = ['医疗险', '意外险', '重疾险', '定期寿险', '防癌险', '年金险']
   .map((t) => ({ label: t, value: t }));
@@ -192,6 +194,7 @@ const BRAND_TO_DB_COMPANIES: Record<string, string[]> = {
 };
 
 export default function HomePage() {
+  const { t, locale } = useI18n();
   const [step, setStep] = useState(0);
   const [aiMode, setAiMode] = useState(false);
   const [income, setIncome] = useState(200000);
@@ -238,7 +241,7 @@ export default function HomePage() {
     const stateProfile = location.state?.profile as Record<string, unknown> | undefined;
     if (stateProfile) {
       fillProfile(stateProfile);
-      message.info('已加载保存的画像，请确认后提交');
+      message.info(t('home.loadedProfile'));
       return;
     }
     const profileId = searchParams.get('profileId');
@@ -247,15 +250,15 @@ export default function HomePage() {
       try {
         const detail = await fetchProfileDetail(Number(profileId));
         fillProfile(detail.profile);
-        message.info(`已加载画像“${detail.name}”，请确认后提交`);
+        message.info(t('home.loadedNamedProfile', { name: detail.name }));
       } catch (err: unknown) {
         const status = (err as { response?: { status?: number } }).response?.status;
         if (status === 404) {
-          message.error('画像不存在或已被删除');
+          message.error(t('home.profileMissing'));
         } else if (status === 403) {
-          message.error('您无权访问该画像');
+          message.error(t('home.profileForbidden'));
         } else {
-          message.error('画像加载失败，请稍后重试');
+          message.error(t('home.profileFailed'));
         }
       }
     })();
@@ -312,10 +315,15 @@ export default function HomePage() {
 
   return (
     <Card style={{ maxWidth: 760, margin: '32px auto' }}>
-      <Title level={3} style={{ textAlign: 'center', marginBottom: 4 }}>智能保险推荐</Title>
+      <Title level={3} style={{ textAlign: 'center', marginBottom: 4 }}>{t('app.title')}</Title>
       <Text type="secondary" style={{ display: 'block', textAlign: 'center', marginBottom: 16 }}>
-        1分钟填写 · 3套方案 · 规则引擎按年龄、职业与预算筛选
+        {t('home.subtitle')}
       </Text>
+      {locale === 'en-US' && (
+        <Text type="secondary" style={{ display: 'block', textAlign: 'center', marginBottom: 16, fontSize: 12 }}>
+          {t('home.catalogNote')}
+        </Text>
+      )}
       <ProgressSteps current={step} />
 
       <Form form={form} layout="vertical"
@@ -327,37 +335,37 @@ export default function HomePage() {
         <div style={{ display: step === 0 ? 'block' : 'none' }}>
           <Row gutter={16}>
             <Col xs={24} sm={12}>
-              <Form.Item name="age" label="年龄" rules={[{ required: true, message: '请输入年龄' }]}>
+              <Form.Item name="age" label={t('home.age')} rules={[{ required: true, message: t('home.ageRequired') }]}>
                 <InputNumber min={0} max={120} style={{ width: '100%' }} placeholder="0-120" />
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
-              <Form.Item name="gender" label="性别" rules={[{ required: true }]}>
+              <Form.Item name="gender" label={t('home.gender')} rules={[{ required: true }]}>
                 <Radio.Group>
-                  <Radio.Button value="male">男</Radio.Button>
-                  <Radio.Button value="female">女</Radio.Button>
+                  <Radio.Button value="male">{t('home.genderMale')}</Radio.Button>
+                  <Radio.Button value="female">{t('home.genderFemale')}</Radio.Button>
                 </Radio.Group>
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item name="life_stage" label="人生阶段" rules={[{ required: true }]}>
+          <Form.Item name="life_stage" label={t('home.lifeStage')} rules={[{ required: true }]}>
             <Select options={[
-              { label: '单身', value: 'single' }, { label: '已婚无孩', value: 'married' },
-              { label: '已婚有孩', value: 'married_with_kids' }, { label: '空巢', value: 'empty_nest' },
-              { label: '退休', value: 'retired' },
-            ]} placeholder="选择人生阶段" />
+              { label: t('home.lifeStageSingle'), value: 'single' }, { label: t('home.lifeStageMarried'), value: 'married' },
+              { label: t('home.lifeStageKids'), value: 'married_with_kids' }, { label: t('home.lifeStageEmptyNest'), value: 'empty_nest' },
+              { label: t('home.lifeStageRetired'), value: 'retired' },
+            ]} placeholder={t('home.lifeStagePlaceholder')} />
           </Form.Item>
-          <Form.Item name="family_burden" label="家庭负担">
+          <Form.Item name="family_burden" label={t('home.familyBurden')}>
             <Select options={[
-              { label: '无负担', value: 'none' }, { label: '需赡养父母', value: 'parents' },
-              { label: '需抚养子女', value: 'children' }, { label: '双重负担', value: 'dual' },
+              { label: t('home.burdenNone'), value: 'none' }, { label: t('home.burdenParents'), value: 'parents' },
+              { label: t('home.burdenChildren'), value: 'children' }, { label: t('home.burdenDual'), value: 'dual' },
             ]} />
           </Form.Item>
         </div>
 
         {/* Step 1: Income & Occupation */}
         <div style={{ display: step === 1 ? 'block' : 'none' }}>
-          <Form.Item label="年收入（元）">
+          <Form.Item label={t('home.income')}>
             <InputNumber value={income} onChange={(v) => setIncome(v || 0)}
               min={10000} max={10000000} step={10000} style={{ width: '100%' }}
               formatter={(v) => `¥ ${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} />
@@ -365,11 +373,11 @@ export default function HomePage() {
           <Row gutter={16}>
             <Col xs={24} sm={12}>
               <Form.Item name="occupation_name" label={
-                <span>职业名称 <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>（选常见职业自动带出等级，也可直接输入）</Text></span>
+                <span>{t('home.occupation')} <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>{t('home.occupationHint')}</Text></span>
               }>
                 <AutoComplete
                   options={OCCUPATION_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-                  placeholder="如：程序员、外卖、矿工…"
+                  placeholder={t('home.occupationPlaceholder')}
                   filterOption={(input, option) =>
                     (option?.value as string || '').includes(input) ||
                     (option?.label as string || '').includes(input)
@@ -384,32 +392,32 @@ export default function HomePage() {
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
-              <Form.Item name="job_class" label="职业类别"
+              <Form.Item name="job_class" label={t('home.jobClass')}
                 dependencies={['occupation_name']}
                 rules={[{
                   validator: (_, value) => {
                     if (value || form.getFieldValue('occupation_name')) return Promise.resolve();
-                    return Promise.reject(new Error('请手动选择职业类别，或填写职业名称'));
+                    return Promise.reject(new Error(t('home.jobClassRequired')));
                   },
                 }]}>
                 <Select allowClear options={[
-                  { label: '1类（低风险·室内办公）', value: 1 }, { label: '2类（较轻·外勤文职）', value: 2 },
-                  { label: '3类（一般·轻体力劳动）', value: 3 }, { label: '4类（中等·制造业）', value: 4 },
-                  { label: '5类（较高·建筑运输）', value: 5 }, { label: '6类（高风险·高空矿下）', value: 6 },
-                ]} placeholder="可留空，按职业自动识别" />
+                  { label: t('home.jobClass1'), value: 1 }, { label: t('home.jobClass2'), value: 2 },
+                  { label: t('home.jobClass3'), value: 3 }, { label: t('home.jobClass4'), value: 4 },
+                  { label: t('home.jobClass5'), value: 5 }, { label: t('home.jobClass6'), value: 6 },
+                ]} placeholder={t('home.jobClassPlaceholder')} />
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item name="social_insurance" label="社保身份">
-            <Radio.Group options={SOCIAL_INSURANCE_OPTIONS} optionType="button" />
+          <Form.Item name="social_insurance" label={t('home.socialInsurance')}>
+            <Radio.Group options={SOCIAL_INSURANCE_OPTION_KEYS.map((o) => ({ label: t(o.labelKey), value: o.value }))} optionType="button" />
           </Form.Item>
-          <Form.Item name="existing_coverage" label="已有保障">
+          <Form.Item name="existing_coverage" label={t('home.existingCoverage')}>
             <Checkbox.Group options={[
-              { label: '社保', value: 'social' }, { label: '已有商业保险', value: 'commercial' },
+              { label: t('home.coverageSocial'), value: 'social' }, { label: t('home.coverageCommercial'), value: 'commercial' },
             ]} />
           </Form.Item>
           <Form.Item label={
-            <span>已有商业保单明细 <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>（可选：用于保额缺口分析，保额单位元）</Text></span>
+            <span>{t('home.policies')} <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>{t('home.policiesHint')}</Text></span>
           }>
             <Form.List name="existing_policies">
               {(fields, { add, remove }) => (
@@ -417,28 +425,28 @@ export default function HomePage() {
                   {fields.map((field) => (
                     <Space key={field.key} align="baseline" style={{ display: 'flex', marginBottom: 4 }}>
                       <Form.Item name={[field.name, 'type']} noStyle
-                        rules={[{ required: true, message: '选择险种' }]}>
-                        <Select options={POLICY_TYPE_OPTIONS} placeholder="险种" style={{ width: 130 }} />
+                        rules={[{ required: true, message: t('home.policyTypeRequired') }]}>
+                        <Select options={POLICY_TYPE_OPTIONS} placeholder={t('home.policyTypePlaceholder')} style={{ width: 130 }} />
                       </Form.Item>
                       <Form.Item name={[field.name, 'sum_insured']} noStyle>
-                        <InputNumber min={0} step={10000} placeholder="保额（元）" style={{ width: 150 }}
+                        <InputNumber min={0} step={10000} placeholder={t('home.policySumPlaceholder')} style={{ width: 150 }}
                           formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} />
                       </Form.Item>
                       <Form.Item name={[field.name, 'annual_premium']} noStyle>
-                        <InputNumber min={0} placeholder="年保费（元，选填）" style={{ width: 160 }}
+                        <InputNumber min={0} placeholder={t('home.policyPremiumPlaceholder')} style={{ width: 160 }}
                           formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} />
                       </Form.Item>
                       <MinusCircleOutlined onClick={() => remove(field.name)} />
                     </Space>
                   ))}
                   <Button type="dashed" onClick={() => add({ type: undefined, sum_insured: undefined, annual_premium: undefined })} icon={<PlusOutlined />} style={{ width: '100%' }}>
-                    添加已有保单
+                    {t('home.addPolicy')}
                   </Button>
                 </>
               )}
             </Form.List>
           </Form.Item>
-          <Form.Item label={`预算占比：${(budgetRatio * 100).toFixed(0)}%（≈ ¥${(income * budgetRatio).toLocaleString()}/年）`}>
+          <Form.Item label={t('home.budgetLabel', { percent: (budgetRatio * 100).toFixed(0), amount: (income * budgetRatio).toLocaleString() })}>
             <Slider min={3} max={10} step={0.5} value={budgetRatio * 100}
               onChange={(v) => setBudgetRatio((v as number) / 100)}
               marks={{ 3: '3%', 5: '5%', 8: '8%', 10: '10%' }}
@@ -450,30 +458,30 @@ export default function HomePage() {
         <div style={{ display: step === 2 ? 'block' : 'none' }}>
           <div style={{ marginBottom: 12, padding: '8px 12px', background: '#f0f5ff', borderRadius: 6, border: '1px solid #d6e4ff' }}>
             <Text strong style={{ fontSize: 13 }}>
-              <Tag color="green" style={{ marginRight: 4 }}>轻度</Tag>大多
-              <Tag color="orange" style={{ marginLeft: 8, marginRight: 4 }}>中度</Tag>可能除外/加费
-              <Tag color="red" style={{ marginLeft: 8, marginRight: 4 }}>重度</Tag>可能拒保
+              <Tag color="green" style={{ marginRight: 4 }}>{t('home.levelMild')}</Tag>{t('home.levelMostly')}
+              <Tag color="orange" style={{ marginLeft: 8, marginRight: 4 }}>{t('home.levelModerate')}</Tag>{t('home.levelMaybeExcluded')}
+              <Tag color="red" style={{ marginLeft: 8, marginRight: 4 }}>{t('home.levelSevere')}</Tag>{t('home.levelMaybeDeclined')}
             </Text>
-            <Tooltip title="等级基于保险行业通用核保规则，具体以产品健康告知及智能核保结论为准">
+            <Tooltip title={t('home.levelTip')}>
               <QuestionCircleOutlined style={{ marginLeft: 8, color: '#999' }} />
             </Tooltip>
           </div>
 
-          <Form.Item name="health_status" label="健康状态" rules={[{ required: true }]}>
+          <Form.Item name="health_status" label={t('home.healthStatus')} rules={[{ required: true }]}>
             <Radio.Group>
-              <Radio.Button value="standard">标准体（无异常）</Radio.Button>
-              <Radio.Button value="substandard">次标准体（有异常但可控）</Radio.Button>
-              <Radio.Button value="history">有病史（住院/手术/重疾史）</Radio.Button>
+              <Radio.Button value="standard">{t('home.healthStandard')}</Radio.Button>
+              <Radio.Button value="substandard">{t('home.healthSubstandard')}</Radio.Button>
+              <Radio.Button value="history">{t('home.healthHistory')}</Radio.Button>
             </Radio.Group>
           </Form.Item>
 
           <Form.Item name="health_issues" label={
-            <span>具体异常项 <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>（搜索并选择，支持多选）</Text></span>
+            <span>{t('home.healthIssues')} <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>{t('home.healthIssuesHint')}</Text></span>
           }>
             <Select
               mode="multiple"
               showSearch
-              placeholder="输入疾病/症状关键词搜索，如：高血压、结节、IBD..."
+              placeholder={t('home.healthSearchPlaceholder')}
               filterOption={(input, option) => {
                 if (!option) return false;
                 const label = option.label as unknown as string;
@@ -500,7 +508,7 @@ export default function HomePage() {
                       <Tag color="default" style={{ fontSize: 10, marginRight: 6 }}>{opt.group}</Tag>
                       {opt.label}
                       <Tag color={LEVEL_COLORS[opt.level]} style={{ marginLeft: 6, fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>
-                        {LEVEL_LABELS[opt.level]}
+                        {t(LEVEL_LABEL_KEYS[opt.level])}
                       </Tag>
                     </span>
                     {opt.tip && (
@@ -518,8 +526,8 @@ export default function HomePage() {
               type="warning"
               showIcon
               style={{ marginBottom: 12 }}
-              message="以下健康项暂未被系统识别"
-              description={`${unknownHealthItems.join('、')}：该健康项本次仅作记录展示，不参与规则筛选，也不构成承保判断；如需核保结论，请以产品健康告知和保险公司核保为准。`}
+              message={t('home.unknownHealthTitle')}
+              description={t('home.unknownHealthBody', { items: unknownHealthItems.join('、') })}
             />
           )}
         </div>
@@ -528,15 +536,15 @@ export default function HomePage() {
         {step === 3 && (
           <div style={{ textAlign: 'center' }}>
             <Space direction="vertical" size="large" style={{ width: '100%' }}>
-              <Text type="secondary">最后一步：选择推荐模式并确认偏好</Text>
+              <Text type="secondary">{t('home.lastStepHint')}</Text>
               <EngineSwitch enabled={aiMode} onChange={setAiMode} />
 
               <Form.Item name="preferred_type" label={
-                <span>偏好险种 <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>（可选，优先配置该险种，不改变硬性规则）</Text></span>
+                <span>{t('home.preferredType')} <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>{t('home.preferredTypeHint')}</Text></span>
               } style={{ textAlign: 'left' }}>
                 <Select
                   allowClear
-                  placeholder="选择优先考虑的险种（可选）"
+                  placeholder={t('home.preferredTypePlaceholder')}
                   options={[
                     { label: '医疗险', value: '医疗险' },
                     { label: '意外险', value: '意外险' },
@@ -548,12 +556,12 @@ export default function HomePage() {
               </Form.Item>
 
               <Form.Item name="preferred_companies" label={
-                <span>偏好保险公司 <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>（可选，选择后优先推荐该公司产品）</Text></span>
+                <span>{t('home.preferredCompanies')} <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>{t('home.preferredCompaniesHint')}</Text></span>
               } style={{ textAlign: 'left' }}>
                 <Select
                   mode="multiple"
                   showSearch
-                  placeholder="输入公司名称搜索，如：平安、泰康、众安..."
+                  placeholder={t('home.companySearchPlaceholder')}
                   filterOption={(input, option) => {
                     if (!option) return false;
                     const label = option.label as unknown as string;
@@ -573,7 +581,7 @@ export default function HomePage() {
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <span>{comp.label}</span>
                         <Tag color={TIER_COLORS[comp.tier]} style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>
-                          {TIER_LABELS[comp.tier]}
+                          {t(TIER_LABEL_KEYS[comp.tier])}
                         </Tag>
                       </div>
                     );
@@ -584,17 +592,17 @@ export default function HomePage() {
               <Card size="small" style={{ textAlign: 'left' }}>
                 <Row gutter={16}>
                   <Col xs={24} sm={12}>
-                    <Text strong>预算概况</Text>
-                    <p style={{ margin: '4px 0' }}>年收入：<Text strong>¥{income.toLocaleString()}</Text></p>
-                    <p style={{ margin: '4px 0' }}>保费预算：<Text strong style={{ color: '#1890ff' }}>¥{(income * budgetRatio).toLocaleString()}/年</Text>（占比 {(budgetRatio * 100).toFixed(0)}%）</p>
+                    <Text strong>{t('home.budgetSummary')}</Text>
+                    <p style={{ margin: '4px 0' }}>{t('home.annualIncomeLabel')}<Text strong>¥{income.toLocaleString()}</Text></p>
+                    <p style={{ margin: '4px 0' }}>{t('home.premiumBudgetLabel')}<Text strong style={{ color: '#1890ff' }}>¥{(income * budgetRatio).toLocaleString()}{t('home.perYearSuffix')}</Text>{t('home.budgetShareSuffix', { percent: (budgetRatio * 100).toFixed(0) })}</p>
                   </Col>
                   <Col xs={24} sm={12}>
-                    <Text strong>保障范围</Text>
-                    <p style={{ margin: '4px 0' }}>参考险种：医疗险 / 意外险 / 重疾险 / 定期寿险 / 防癌险</p>
-                    <p style={{ margin: '4px 0' }}>（按年龄、职业与预算动态组合，以推荐结果为准）</p>
+                    <Text strong>{t('home.coverageScope')}</Text>
+                    <p style={{ margin: '4px 0' }}>{t('home.scopeTypes')}</p>
+                    <p style={{ margin: '4px 0' }}>{t('home.scopeNote')}</p>
                     <p style={{ margin: '4px 0' }}>
-                      推荐模式：
-                      <Tag color={aiMode ? 'blue' : 'green'}>{aiMode ? 'AI 精排' : '极速规则'}</Tag>
+                      {t('home.modeLabel')}
+                      <Tag color={aiMode ? 'blue' : 'green'}>{aiMode ? t('home.modeAi') : t('home.modeRule')}</Tag>
                     </p>
                   </Col>
                 </Row>
@@ -602,7 +610,7 @@ export default function HomePage() {
               {aiMode && (
                 <Card size="small" style={{ background: '#e6f7ff', border: '1px solid #91d5ff' }}>
                   <Text style={{ fontSize: 13 }}>
-                    AI 模式将调用大模型，在规则引擎筛出的候选池内做个性化精排并生成「AI 精选」方案（硬规则与预算上限不受 AI 影响），响应时间约 10-30 秒
+                    {t('home.aiNotice')}
                   </Text>
                 </Card>
               )}
@@ -612,15 +620,15 @@ export default function HomePage() {
 
         <Divider style={{ margin: '20px 0 12px' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <Button htmlType="button" disabled={step === 0} onClick={() => setStep((s) => s - 1)}>上一步</Button>
+          <Button htmlType="button" disabled={step === 0} onClick={() => setStep((s) => s - 1)}>{t('home.prev')}</Button>
           {step < 3 ? (
             <Button
               htmlType="button"
               type="primary"
               onClick={handleNext}
-            >下一步</Button>
+            >{t('home.next')}</Button>
           ) : (
-            <Button type="primary" size="large" onClick={handleSubmit}>开始推荐</Button>
+            <Button type="primary" size="large" onClick={handleSubmit}>{t('home.submit')}</Button>
           )}
         </div>
       </Form>
