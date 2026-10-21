@@ -1,18 +1,26 @@
 name: Backend Tests
+
 on:
   push:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          # Matches the Python version of the backend image and the README.
+          python-version: "3.12"
           cache: pip
+          cache-dependency-path: backend/requirements.txt
       - name: Install dependencies
         run: pip install -r requirements.txt
         working-directory: ./backend

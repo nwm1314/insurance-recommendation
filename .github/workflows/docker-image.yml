@@ -1,0 +1,62 @@
+name: Docker Build
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "backend/Dockerfile"
+      - "backend/entrypoint.sh"
+      - "backend/requirements.txt"
+      - "frontend/Dockerfile"
+      - "frontend/nginx.conf"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "docker-compose.yml"
+      - ".dockerignore"
+      - "frontend/.dockerignore"
+      - ".github/workflows/docker-image.yml"
+  pull_request:
+    paths:
+      - "backend/Dockerfile"
+      - "backend/entrypoint.sh"
+      - "backend/requirements.txt"
+      - "frontend/Dockerfile"
+      - "frontend/nginx.conf"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "docker-compose.yml"
+      - ".dockerignore"
+      - "frontend/.dockerignore"
+      - ".github/workflows/docker-image.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      # Building the images is the cheapest way to catch a Dockerfile that no
+      # longer matches the tree. Multi-arch publishing is deliberately out of
+      # scope: this workflow produces local tags only and pushes nothing.
+      - name: Build backend image
+        run: docker build -f backend/Dockerfile -t insurance-recommendation-backend:ci .
+
+      - name: Build frontend image
+        run: docker build -f frontend/Dockerfile -t insurance-recommendation-frontend:ci frontend
+
+      # Compose interpolation is where `:?` requirements bite. Values here are
+      # throw-away CI placeholders, never real credentials.
+      - name: Validate Compose configuration
+        env:
+          LLM_API_KEY: ci-placeholder
+          POSTGRES_PASSWORD: ci-placeholder
+          JWT_SECRET_KEY: ci-placeholder
+          DATABASE_URL: postgresql+psycopg2://insurance:ci-placeholder@postgres:5432/insurance
+          FRONTEND_PORT: "18080"
+        run: docker compose config --quiet

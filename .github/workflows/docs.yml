@@ -1,0 +1,42 @@
+name: Docs
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      # Standard library only: no dependency to install, nothing to keep in sync.
+      - name: Check relative links in Markdown
+        run: python .github/scripts/check_docs_links.py
+      - name: Check issue templates are valid YAML
+        run: |
+          python - <<'PY'
+          import pathlib, sys
+          try:
+              import yaml
+          except ImportError:
+              print("PyYAML not available, skipping template validation")
+              sys.exit(0)
+          failed = False
+          for path in sorted(pathlib.Path(".github/ISSUE_TEMPLATE").glob("*.yml")):
+              try:
+                  yaml.safe_load(path.read_text(encoding="utf-8"))
+                  print(f"OK   {path}")
+              except Exception as exc:  # noqa: BLE001 - report and keep checking
+                  failed = True
+                  print(f"FAIL {path}: {exc}")
+          sys.exit(1 if failed else 0)
+          PY
