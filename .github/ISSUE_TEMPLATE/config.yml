@@ -9,3 +9,6 @@ contact_links:
   - name: Contributing guide
     url: https://github.com/nwm1314/insurance-recommendation/blob/master/CONTRIBUTING.md
     about: Setup, branch and commit conventions, test requirements, and how pull requests are reviewed.
+  - name: Product data policy
+    url: https://github.com/nwm1314/insurance-recommendation/blob/master/docs/en/data-policy.md
+    about: Where the catalog comes from, what is stored, attribution, and the correction/takedown process.

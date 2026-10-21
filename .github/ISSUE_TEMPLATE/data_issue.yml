@@ -1,0 +1,72 @@
+name: Data correction or takedown
+description: A product record is inaccurate, mis-attributed, or should not be published.
+title: "[Data] "
+labels: ["data"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for catalog accuracy issues and removal requests. Read the
+        [data policy](https://github.com/nwm1314/insurance-recommendation/blob/master/docs/en/data-policy.md)
+        first — it explains what is collected and why.
+
+        **Do not include personal data, credentials, or confidential material.** If the request
+        itself is sensitive, use the security contact in
+        [SECURITY.md](https://github.com/nwm1314/insurance-recommendation/blob/master/SECURITY.md)
+        and state that it concerns product data.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Request type
+      options:
+        - Field is wrong (premium, sum insured, eligibility, benefit line, …)
+        - Wrong attribution (company or source URL)
+        - Source no longer permits crawling
+        - Product is discontinued or should be taken off-shelf
+        - Removal request
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: product
+    attributes:
+      label: Product
+      description: Product name and company as shown in the catalog, plus the product id if you have it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: issue
+    attributes:
+      label: What is wrong
+      description: The field, the current value, and the value you believe is correct.
+    validations:
+      required: true
+
+  - type: input
+    id: source
+    attributes:
+      label: Authoritative source URL
+      description: The page or document that supports the correction. Public URLs only.
+    validations:
+      required: false
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Optional excerpt or screenshot, with personal data and credentials removed.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I am not including personal data, credentials, or confidential material.
+          required: true
+        - label: I searched existing issues for the same product.
+          required: true
