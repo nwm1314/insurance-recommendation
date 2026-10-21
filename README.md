@@ -1,5 +1,10 @@
 # 智能保险推荐引擎
 
+**简体中文** | [English](README.en.md)
+
+> English readers: see [`README.en.md`](README.en.md). API, deployment and development
+> guides in English are under [`docs/en/`](docs/en/).
+
 基于 **规则树召回 + AI 精排** 双引擎的全栈保险推荐系统。不依赖任何商业保险 API，通过 Python 爬虫 + 大模型结构化解析构建产品数据库，为用户提供个性化保险方案推荐。
 
 ## 架构概览
@@ -114,8 +119,8 @@ cp .env.example .env
 # 启动所有服务
 docker compose up -d --build
 
-# 初始化种子数据
-docker compose exec backend python scripts/seed.py
+# 初始化种子数据（镜像 WORKDIR 为 /srv，脚本路径需带 backend/ 前缀）
+docker compose exec backend python backend/scripts/seed.py
 ```
 
 访问:
@@ -320,6 +325,13 @@ Cookie 登录用户计入用户级限流（限流优先解析 Bearer 头，其�
 ```
 
 **产品池策略**：以聚合站（慧择、开心保，robots.txt 均允许产品页抓取）为主数据源，深蓝保等测评站与保险公司官网作为补充验证源；中民保险网等 robots.txt 全站禁抓的站点已停用。只有审核（或达标自动）发布后的产品才进入推荐池，产品链接指向真实来源页（`source_type=aggregator` 标"产品页"，官网链接标"官网"）。生产环境不注入演示目录（`SEED_DEMO_PRODUCTS=false`），演示种子仅用于本地开发与 E2E。自动发布有硬性安全门：启发式抽取永不自动发布、占位值/缺失关键字段拦截、模糊匹配（同名系列产品）必须人工确认。系统不提供实时核保或保险公司报价 API，保费区间、健康匹配和保额均为辅助信息，最终以保险公司官方条款、健康告知和核保结果为准。
+
+## 参与贡献与安全
+
+- 贡献流程（环境搭建、分支与提交规范、测试要求、PR 评审）：[CONTRIBUTING.md](CONTRIBUTING.md)
+- 社区行为规范：[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- 安全问题**请勿**公开提交 issue，按 [SECURITY.md](SECURITY.md) 的私密渠道上报
+- 发布与版本策略：[docs/en/release-process.md](docs/en/release-process.md)；英文技术文档见 [docs/en/](docs/en/)
 
 ## 免责声明
 

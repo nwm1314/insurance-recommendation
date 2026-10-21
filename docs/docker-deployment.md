@@ -24,9 +24,11 @@ PostgreSQL、Redis、Backend 都不暴露宿主机端口，只在 Compose 内部
 建议：
 
 ```text
-测试服务器：origin/develop
-生产服务器：origin/master 或 release tag
+测试服务器：origin/master（或待验证的发布候选 tag）
+生产服务器：release tag（当前首个正式版本为 v0.1.0）
 ```
+
+> `develop` 分支已全部合入 `master`，不再作为集成分支使用，请勿从它部署。
 
 如果测试和生产在不同服务器，可以使用相同的 `FRONTEND_PORT=18080`。
 
@@ -45,7 +47,7 @@ PostgreSQL、Redis、Backend 都不暴露宿主机端口，只在 Compose 内部
 cd /opt
 git clone https://github.com/nwm1314/insurance-recommendation.git insurance-staging
 cd insurance-staging
-git checkout develop
+git checkout master
 cp .env.example .env
 ```
 
@@ -133,8 +135,8 @@ docker compose exec postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backup
 ```bash
 cd /opt/insurance-staging
 git fetch origin
-git checkout develop
-git pull origin develop
+git checkout master
+git pull origin master
 docker compose build
 docker compose run --rm backend sh -c "cd /srv/backend && alembic upgrade head"
 docker compose up -d --build
@@ -150,7 +152,7 @@ cd /opt
 git clone https://github.com/nwm1314/insurance-recommendation.git insurance-prod
 cd insurance-prod
 git fetch --tags
-git checkout v0.3.0
+git checkout v0.1.0
 cp .env.example .env
 ```
 
@@ -483,19 +485,21 @@ cp backup-2026-08-11.db data/insurance.db
 
 ## 发布流程
 
-1. 推送 `develop`。
-2. 测试服务器部署 `develop` 并验证。
-3. 验证通过后合并到 `master`。
-4. 打 release tag。
-5. 生产服务器部署 tag。
+主干为 `master`（trunk-based）。功能分支 → PR → 合入 `master` → 在 `master` 上打 tag →
+生产部署 tag。完整门禁与版本号规则见 `docs/en/release-process.md`。
+
+1. 功能分支通过 PR 合入 `master`。
+2. 测试服务器部署 `master` 并验证。
+3. 验证通过后在 `master` 的发布提交上打 annotated tag。
+4. 生产服务器部署该 tag。
 
 ```bash
 git checkout master
 git pull origin master
-git merge --no-ff develop
+# 版本号、CHANGELOG 已在发布提交中就位
+git tag -a vX.Y.Z -m "release: vX.Y.Z"
 git push origin master
-git tag -a v0.3.0 -m "release: auth ingestion and stage3 recommendations"
-git push origin v0.3.0
+git push origin vX.Y.Z
 ```
 
 ## AI expert mode verification
