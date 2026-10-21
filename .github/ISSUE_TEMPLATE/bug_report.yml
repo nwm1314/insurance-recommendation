@@ -1,0 +1,111 @@
+name: Bug report
+description: Something behaves differently from what the documentation or the code says it should.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please do **not** include API keys, cookies, tokens, real user
+        records or health data. Security vulnerabilities belong in
+        [private reporting](https://github.com/nwm1314/insurance-recommendation/security/advisories/new),
+        not here.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened
+      description: One or two sentences describing the problem.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Recommendation engine (eligibility, scoring, packages)
+        - AI mode (LLM rerank, fallback, quota)
+        - Product catalog / ingestion / review
+        - Authentication and permissions
+        - Frontend / UI
+        - Deployment or configuration
+        - Documentation
+        - Tests or CI
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps. Include the questionnaire answers or the API payload when relevant.
+      placeholder: |
+        1. Start the stack with `docker compose up -d --build`
+        2. Submit a profile with age=32, job_class=2, ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What you expected, and where that expectation comes from (docs, code, tests).
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What happened instead. Include the response body, `engine_mode`, or the error message.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Fill in what applies.
+      value: |
+        - Version / commit:
+        - Install: Docker Compose / manual / other
+        - OS:
+        - Python:
+        - Node:
+        - Redis running: yes / no
+        - AI mode enabled: yes / no
+        - APP_ENV:
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or screenshots
+      description: Redact secrets and personal data. Backend log lines around the failure are the most useful.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: Test evidence (optional)
+      description: If you ran a test, paste the command and the result. If a test fails, say whether it fails without your change too.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+        - label: I removed secrets, credentials and personal data from this report.
+          required: true
+        - label: This is not a security vulnerability (those go through private reporting).
+          required: true

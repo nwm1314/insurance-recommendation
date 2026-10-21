@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/nwm1314/insurance-recommendation/security/advisories/new
+    about: Report privately. Do not open a public issue for a suspected vulnerability.
+  - name: Documentation
+    url: https://github.com/nwm1314/insurance-recommendation/tree/master/docs
+    about: Deployment runbook (Chinese) and English guides for architecture, development and deployment.
+  - name: Contributing guide
+    url: https://github.com/nwm1314/insurance-recommendation/blob/master/CONTRIBUTING.md
+    about: Setup, branch and commit conventions, test requirements, and how pull requests are reviewed.

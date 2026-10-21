@@ -1,0 +1,65 @@
+name: Feature request
+description: Propose a capability, a rule change, or an improvement to how the project works.
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem before the solution. For anything larger than a bug fix, this issue
+        is the place to agree on the approach before code is written.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Who is affected, and what decision does the current behaviour get wrong?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should happen instead. If you know which layer it belongs to, say so.
+      placeholder: |
+        Layer: rule engine / scorer / budget / combo builder / ingestion / API / UI / docs
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches, including doing nothing, and why you rejected them.
+    validations:
+      required: false
+
+  - type: textarea
+    id: risk
+    attributes:
+      label: Risk and scope
+      description: |
+        Does this change eligibility, scoring weights, the AI boundary, the database schema or
+        deployment configuration? Those need extra care because historical recommendation results
+        are reproducible from versioned rules and weights.
+    validations:
+      required: false
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: How this could be validated
+      description: The test or evidence that would show the change works.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+        - label: I understand this issue is a proposal, not an accepted commitment.
+          required: true
