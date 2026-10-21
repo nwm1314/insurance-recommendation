@@ -8,7 +8,37 @@ is `0`, minor releases may contain breaking changes; they are called out explici
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Recommendation record retention.** `RECORD_RETENTION_DAYS` is now enforced: a positive value
+  registers a daily job that hard-deletes recommendation records older than the window, and
+  `backend/scripts/purge_expired_records.py` offers a manual `--dry-run`/`--days` equivalent for
+  deployments that run with `SCHEDULER_DISABLED=true`. Saved profiles are not touched, `0` keeps
+  the previous keep-forever behaviour, and the job is covered by `test_record_retention.py`.
+- **Bilingual interface.** The React UI now renders from a zh-CN / en-US dictionary
+  (`frontend/src/i18n/`), with a header language toggle, `?lang=en` deep links, persisted
+  preference and browser-language detection. Static UI copy is translated; product, insurer and
+  condition names stay Chinese so they match official terms, and admin screens remain Chinese.
+- **Product data policy** (`docs/data-policy.md`, `docs/en/data-policy.md`): sources and their
+  roles, what is and is not collected, storage and exposure, attribution and freshness,
+  correction/takedown route, operator obligations, and where each rule is enforced in code.
+  A "Data correction or takedown" issue form and a `data` label support it.
+- **CI coverage for the parts that had none**: a frontend type-check/build workflow, a docs
+  workflow (relative-link check plus issue-template YAML validation), and a Docker workflow that
+  builds both images and validates Compose interpolation on Docker-related changes.
+- Two Playwright cases for the language switch (`frontend/tests/e2e/i18n.spec.ts`): `?lang=en`
+  renders English, the toggle returns to Chinese, and the English login page is usable. The
+  suite is now 39 tests.
+
+### Changed
+
+- `COMPANY_URLS` moved from `backend/scripts/seed.py` to `backend/app/catalog_sources.py`;
+  `seed.py` re-exports it. The recommendation API no longer imports a CLI script (closes the
+  REC-005 layering inversion), guarded by `test_catalog_sources.py`.
+- CI now uses Python 3.12 (matching the backend image) and Node 22, and the workflow actions were
+  moved off the deprecated Node 20 runtime. All workflows gained concurrency groups.
+- README (both languages), the architecture/development/deployment guides and
+  `docs/docker-deployment.md` document retention, the language switch and the data policy.
 
 ## [0.1.0] - 2026-10-21
 

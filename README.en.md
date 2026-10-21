@@ -7,9 +7,11 @@ engine decides which products a user is allowed to buy, an eight-dimension score
 a budget-aware planner assembles three portfolios, and an optional LLM layer explains the
 result without ever being able to override the rules.
 
-The project targets the Chinese mainland insurance market: the product catalog, the
-questionnaire and the UI copy are Chinese-language. Everything else — code, configuration and
-these documents — is in English so that the logic can be reviewed and reused elsewhere.
+The project targets the Chinese mainland insurance market. The interface ships in Chinese and
+English (toggle in the header, or `?lang=en`); product names, insurer names and condition
+labels stay in Chinese on purpose, so they match the official terms users will check against.
+Code, configuration and documentation are in English so the logic can be reviewed and reused
+elsewhere.
 
 - **Status:** early public release, `v0.1.0`
 - **License:** MIT
@@ -106,7 +108,7 @@ it does not replace reading a policy contract.
 - Encryption at rest for saved recommendation records, which contain health disclosures
 - Chinese-first React UI, responsive down to 320 px, with admin console for products,
   crawling, review tasks and audit logs
-- A 300+ case backend suite, a TypeScript build gate and 37 Playwright end-to-end tests
+- A 300+ case backend suite, a TypeScript build gate and 39 Playwright end-to-end tests
 
 ## 4. System Architecture
 
@@ -346,7 +348,7 @@ uppercase names** — a lowercase-only `.env` will deploy with empty values.
 | `SECURITY_HEADERS` | `true` | nosniff, frame options, referrer policy, CSP |
 | `HSTS_ENABLED` | `false` | Honoured only when `APP_ENV=production` |
 | `RECORD_ENCRYPTION_KEY` | empty | Fernet key material for saved recommendation records |
-| `RECORD_RETENTION_DAYS` | `0` | Reserved (0 = keep forever); cleanup is not implemented |
+| `RECORD_RETENTION_DAYS` | `0` | Retention window for recommendation records (0 = keep forever). A positive value triggers a daily hard delete of older records; saved profiles are not touched |
 | `JWT_SECRET_KEY` | `change_me_before_deploy` | **Must** be replaced outside local development |
 
 Leaving `RECORD_ENCRYPTION_KEY` empty stores recommendation records in plaintext and logs a
@@ -433,6 +435,10 @@ documented rather than hidden.
   owning user.
 - **No telemetry.** The project contains no analytics, tracking or outbound call-home code.
 
+The catalog itself is governed by a published [data policy](docs/en/data-policy.md): which
+sources are crawled, what is stored (and what never is), how attribution and freshness work,
+and how to request a correction or takedown.
+
 Vulnerability disclosure: see [`SECURITY.md`](SECURITY.md). Please do not open a public issue
 for a suspected vulnerability.
 
@@ -447,14 +453,19 @@ Known limitations, stated plainly:
   no insurer is contacted and no underwriting decision is simulated.
 - **No regional dimension.** Province/city eligibility is neither collected nor modelled,
   because the product data does not carry it.
-- **Chinese market only.** Product data, currency (CNY) and UI copy assume the Chinese
-  mainland market. There is no UI internationalisation layer yet.
+- **Chinese market only.** Product data, currency (CNY) and the catalog assume the Chinese
+  mainland market. The interface can be switched to English, but product, insurer and
+  condition names, plus everything the backend generates (reasons, rule summaries, AI
+  narratives), remain Chinese. Admin screens are Chinese-only.
 - **AI mode is advisory and optional.** It requires an external LLM endpoint; quota, latency
   and provider availability all affect it, and it degrades to rule mode.
 - **Demo catalog vs. real pool.** `SEED_DEMO_PRODUCTS=true` injects a demonstration catalog
   for local use and E2E. Production deployments are expected to run with it disabled and build
   the pool from reviewed crawl data, which means an empty product pool on first boot.
-- **Retention is not enforced.** `RECORD_RETENTION_DAYS` is reserved; no cleanup job runs.
+- **Retention is opt-in.** `RECORD_RETENTION_DAYS=0` (the default) keeps records forever. With a
+  positive value a daily job hard-deletes recommendation records older than the window; saved
+  profiles are user-managed and never deleted by it. Deletion is irreversible, so export first
+  if you need an archive.
 - **Single-scheduler assumption.** The backend embeds APScheduler, so only one replica may run
   the scheduler; other replicas need `SCHEDULER_DISABLED=true`.
 - **Not a licensed intermediary.** The project provides no application, purchase or lead

@@ -158,8 +158,18 @@ Changing the key later makes existing ciphertext unreadable. Set it before the f
 and back it up with the database.
 
 Note the limits: encryption covers recommendation records only. Database dumps, volume
-snapshots and backups remain sensitive and need their own protection. `RECORD_RETENTION_DAYS`
-is reserved configuration; no cleanup job runs in `v0.1.0`.
+snapshots and backups remain sensitive and need their own protection.
+
+Retention is opt-in. `RECORD_RETENTION_DAYS=0` (the default) keeps records forever; a positive
+value registers a daily job that hard-deletes recommendation records older than the window.
+Saved profiles are user-managed and are not deleted by it. Deletion is irreversible, so export
+before shortening the window. On replicas with `SCHEDULER_DISABLED=true`, run the manual
+equivalent:
+
+```bash
+docker compose exec backend python backend/scripts/purge_expired_records.py --days 365 --dry-run
+docker compose exec backend python backend/scripts/purge_expired_records.py --days 365
+```
 
 ## 6. Reverse proxy and TLS
 
@@ -237,7 +247,7 @@ the database volume.
 | `CORS_ALLOW_ORIGINS` | Staging origin | Exact production origin |
 | `RECORD_ENCRYPTION_KEY` | Required (real testers) | Required |
 | `SEED_DEMO_PRODUCTS` | Allowed | Must stay `false` |
-| Branch / ref | `develop` | Release tag |
+| Branch / ref | `master` (or a release candidate tag) | Release tag |
 
 Both environments run the same image build; only configuration differs. There is no
 staging-only code path.
@@ -246,11 +256,15 @@ staging-only code path.
 
 Stated so that expectations are correct:
 
+- No rights to third-party product content. You choose which sources to crawl and are
+  responsible for complying with their terms; see the
+  [data policy](data-policy.md).
 - No HA, autoscaling, or multi-region deployment; the scheduler assumes a single replica.
 - No object storage, queue, or background worker pool; crawling runs inside the API process.
 - No WAF, DDoS protection or bot management — put those in front if you expose the service.
 - No audit export, SIEM integration, or metrics endpoint. Logs go to the container's stdout.
-- No automatic data-retention deletion.
+- No automatic data-retention deletion unless `RECORD_RETENTION_DAYS` is set; the default keeps
+  records forever.
 - No legal compliance certification. If you handle real health data, you are responsible for
   the applicable regulatory obligations in your jurisdiction.
 

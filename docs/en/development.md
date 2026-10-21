@@ -142,6 +142,8 @@ What each file guards:
 | `test_rate_limiter.py` | Redis fixed-window counters and fail-open |
 | `test_profile_history_api.py` | Saved profiles and recommendation history |
 | `test_recommendation_persistence.py` | Record storage, encryption round-trip |
+| `test_record_retention.py` | Retention window, dry-run, job registration, saved-profile isolation |
+| `test_catalog_sources.py` | Company URL constants live in the app layer; no `api → scripts` import |
 | `test_schema_migration.py` | Migration chain vs. ORM metadata |
 | `test_money_unit_consistency.py` | 万 vs. CNY unit conventions |
 | `test_compose_policy.py` | Compose forwards the variables the docs promise |
@@ -173,7 +175,7 @@ npx playwright test
 ```
 
 Playwright starts a real backend (`tests/e2e/start-backend.mjs`: `alembic upgrade head` against
-`data/e2e-backend.db`, then `uvicorn`) and a Vite dev server, then runs 37 tests with two
+`data/e2e-backend.db`, then `uvicorn`) and a Vite dev server, then runs 39 tests with two
 workers. Ports default to 3000 (frontend) and 8000 (backend) with
 `reuseExistingServer: false`; if either is taken, the run fails immediately.
 
@@ -212,8 +214,31 @@ Conventions worth knowing before you change engine code:
   those values.
 - **Docstrings.** Backend modules use detailed Chinese docstrings to record why a guard exists
   and which review item it closes. Follow that pattern; do not strip those comments.
-- **Language.** Code comments and UI copy are Chinese; README, `docs/en/*` and the community
-  files are English.
+- **Language.** Code comments are Chinese; the UI renders from dictionaries; README, `docs/en/*`
+  and the community files are English.
+
+### Internationalisation
+
+Static UI copy lives in `frontend/src/i18n/messages.ts` as a flat `key: text` map for `zh-CN`
+and `en-US`. `MessageKey` is derived from the Chinese dictionary, so a missing English entry is
+a type error rather than a silent fallback.
+
+Rules that keep the two languages honest:
+
+- **zh-CN values are the current UI text, word for word.** They are the default interface and
+  the Playwright suite asserts against them. A "nicer" rewording here breaks tests and changes
+  the product for existing users; treat it as a separate, deliberate change.
+- **Do not translate catalog data.** Product names, insurer names, insurance types and the
+  health-condition list stay Chinese; they map to official terms and to backend values.
+- **Backend-generated text stays Chinese.** Recommendation reasons, rule summaries, AI
+  narratives and error details come from the API, not the dictionary.
+- **Admin screens are Chinese-only.** `AdminPage.tsx` is not translated yet.
+- **Interpolation** uses `{name}` placeholders: `t('home.budgetLabel', { percent: 8 })`.
+
+To check English manually, open the app with `?lang=en` or use the header toggle (the choice is
+persisted in `localStorage`). The browser language decides the first visit: `en-*` gets English,
+everything else gets Chinese. Playwright pins `locale: 'zh-CN'` so the suite tests the default
+interface deterministically.
 
 ## 6. Continuous integration
 

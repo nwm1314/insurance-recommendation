@@ -67,10 +67,9 @@ docs/en/                      This document plus development and deployment guid
 
 The dependency direction is one-way: `api → engine → models`. The engine never imports
 `fastapi`, and the only place the API layer touches engine internals is orchestration in
-`api/recommend.py`. One known inversion is documented in code: `api/recommend.py` imports
-`COMPANY_URLS` from `backend/scripts/seed.py` to classify a product's source type; the correct
-fix is to move that constant into `config` or `models`, but it was left in place to keep this
-release free of refactors.
+`api/recommend.py`. Shared catalog constants live in the application layer
+(`app/catalog_sources.py`); `scripts/seed.py` re-exports `COMPANY_URLS` from there, so the API
+no longer depends on a CLI script (the REC-005 inversion is closed).
 
 ## 3. Runtime topology
 
@@ -90,6 +89,11 @@ missing tables/columns refuses to start. The gate is deliberately fail-closed; s
 
 Because the scheduler runs inside the backend process, **the backend must run as a single
 replica** unless every non-primary replica sets `SCHEDULER_DISABLED=true`.
+
+Two periodic jobs are registered at startup: product-pool maintenance every
+`CRAWL_INTERVAL_MINUTES`, and — only when `RECORD_RETENTION_DAYS > 0` — a daily retention job
+that hard-deletes recommendation records past the window. With `SCHEDULER_DISABLED=true` the
+daily job does not run; `scripts/purge_expired_records.py` is the manual equivalent.
 
 ## 4. HTTP layer
 
@@ -232,7 +236,9 @@ while `premium_*` and `deductible` are in CNY. `test_money_unit_consistency.py` 
 
 ## 7. Ingestion pipeline
 
-Stages, in execution order, with the gate that stops bad data:
+Stages, in execution order, with the gate that stops bad data. The source-level rules
+(robots, rate limits, attribution, takedown) are documented in
+[`data-policy.md`](data-policy.md).
 
 1. **Discovery** (`discovery.py`) — read aggregator listing pages, extract product detail URLs,
    register crawl jobs with a per-source cap.
@@ -289,10 +295,11 @@ Scheduling (`crawler/scheduler.py`) runs discovery plus all enabled jobs every
 
 Recorded honestly, because it affects contributors:
 
-- The `COMPANY_URLS` import inversion described in §2.
-- `RECORD_RETENTION_DAYS` is configuration-only; no cleanup task exists.
 - Saved-profile and recommendation-record APIs share `api/auth.py`, which has grown beyond
   authentication concerns.
-- The UI has no i18n layer; Chinese strings are inline in components.
+- Static UI copy lives in `frontend/src/i18n/messages.ts` (zh-CN and en-US, flat keys). Product,
+  insurer and condition labels deliberately stay Chinese, admin screens are Chinese-only, and
+  backend-generated text (reasons, rule summaries, AI narratives) is Chinese regardless of the
+  UI locale.
 - No linter or formatter is configured for either backend or frontend; style is held by review
   and by `tsc`.

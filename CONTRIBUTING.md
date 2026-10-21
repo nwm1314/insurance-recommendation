@@ -108,6 +108,10 @@ There is no configured linter or formatter. Match the file you are editing:
   the local convention rather than translating them).
 - TypeScript/React: function components, hooks, explicit prop types, Ant Design components.
 - Keep the engine free of FastAPI imports; keep the API layer free of scoring logic.
+- UI copy goes through `frontend/src/i18n/messages.ts`: add the key to **both** locales, and
+  keep the `zh-CN` value identical to the existing text (it is the default interface the E2E
+  suite asserts). Product, insurer and condition names stay Chinese by design — see
+  [`docs/en/development.md`](docs/en/development.md#internationalisation).
 
 Tests live in `backend/tests/` and `frontend/tests/e2e/`. Backend tests must not depend on a
 running Redis (the shared fixtures install an in-process fake) and must not write to
@@ -129,7 +133,9 @@ Documentation is part of the product, not an afterthought:
 
 ## Contributing product data and rules
 
-This is the area with the highest risk of causing harm, so the rules are stricter:
+This is the area with the highest risk of causing harm, so the rules are stricter. The full
+policy — sources, storage, attribution, takedown — is in
+[`docs/en/data-policy.md`](docs/en/data-policy.md).
 
 - **Only public sources.** Product facts must come from the insurer's official site or a public
   aggregator page that permits crawling under its `robots.txt`.

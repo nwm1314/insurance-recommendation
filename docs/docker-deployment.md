@@ -313,7 +313,7 @@ echo "OK: 推荐记录已加密"
 - 密钥一旦更换，**既有密文记录将无法解密**（上层按"不可解密记录"处理，与 fail-open 边界
   一致，见 `backend/app/models/auth.py`）。上线前设定并妥善备份。
 - 加密仅覆盖推荐记录；**数据库文件与备份仍需按敏感数据处理**。
-- 健康信息保留期限以 `RECORD_RETENTION_DAYS`（0=永久）预留，当前版本不实现自动清理任务。
+- 健康信息保留期限由 `RECORD_RETENTION_DAYS` 控制：`0`（默认）永久保留；正数时后端每日清理一次早于该天数的推荐记录（硬删除，仅 `recommendation_records`，不影响用户保存的画像）。`SCHEDULER_DISABLED=true` 的副本可用 `python backend/scripts/purge_expired_records.py --days N [--dry-run]` 手动执行；缩短窗口前先导出归档，删除不可恢复。
 
 ### 产品池维护（聚合站采集 + 自动发布）
 

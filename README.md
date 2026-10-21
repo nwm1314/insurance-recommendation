@@ -7,6 +7,8 @@
 
 基于 **规则树召回 + AI 精排** 双引擎的全栈保险推荐系统。不依赖任何商业保险 API，通过 Python 爬虫 + 大模型结构化解析构建产品数据库，为用户提供个性化保险方案推荐。
 
+界面支持中英文切换：页头右上角的语言按钮，或在 URL 上带 `?lang=en`。产品名称、保险公司、险种与健康异常项保留中文原文（与官方条款逐项对应），管理后台目前仅中文；后端生成的推荐理由、规则摘要与 AI 叙述同样为中文。
+
 ## 架构概览
 
 ```
@@ -225,14 +227,14 @@ FIRST_ADMIN_EMAIL=admin@example.com FIRST_ADMIN_PASSWORD=强密码 python -m uvi
 | `SECURITY_HEADERS` | `true` | 安全响应头开关（nosniff / X-Frame-Options / Referrer-Policy / CSP） |
 | `HSTS_ENABLED` | `false` | 发送 `Strict-Transport-Security`，仅 `APP_ENV=production` 时生效 |
 | `RECORD_ENCRYPTION_KEY` | 空 | 推荐记录落库加密密钥（Fernet，任意字符串自动派生）；为空明文落库并在启动时告警（测试/开发为 warning，`APP_ENV=production` 升级为 error）。**对外内测/生产必须配置** |
-| `RECORD_RETENTION_DAYS` | `0` | 健康信息保留天数预留（0=永久），本期不实现清理任务 |
+| `RECORD_RETENTION_DAYS` | `0` | 推荐记录保留天数（0=永久）；正数时每日清理早于该天数的记录，仅删 `recommendation_records`，不影响用户保存的画像 |
 | `AI_DAILY_LIMIT_PER_USER` | `20` | AI 模式每日配额（登录按用户、匿名按 IP） |
 | `AI_CACHE_TTL_SECONDS` | `3600` | AI narrative 短缓存 TTL（Redis，故障跳过） |
 | `CORS_ALLOW_ORIGINS` | `http://localhost,http://localhost:3000,http://127.0.0.1:3000` | 逗号分隔的显式来源白名单（http/https，可含端口）；禁止带路径/查询串；`APP_ENV=production` 拒绝 `*`，且任何环境 `*` 都不能与 `allow_credentials=True`（Cookie 认证必需）并用 |
 
 Cookie 登录用户计入用户级限流（限流优先解析 Bearer 头，其次解析 `access_token` Cookie）。详见 `docs/docker-deployment.md` 的“安全配置”章节。
 
-**推荐记录加密与保留**：设置 `RECORD_ENCRYPTION_KEY` 后，推荐记录的画像与结果（含健康描述）以 Fernet 加密落库（任意字符串密钥自动派生）；密钥为空则明文落库并在启动时告警（显式降级，非静默），其中 `APP_ENV=production` 下升级为 **error** 级。由于推荐记录含 `health_status` / `health_issues` 等敏感个人信息，**对外内测与生产部署必须配置该密钥**（配置方式与注意事项见 `docs/docker-deployment.md` 的「推荐记录加密」章节）。加密仅覆盖推荐记录——数据库文件/备份仍需按敏感数据处理。健康信息保留期限以 `RECORD_RETENTION_DAYS`（0=永久）预留，当前版本不实现自动清理任务。
+**推荐记录加密与保留**：设置 `RECORD_ENCRYPTION_KEY` 后，推荐记录的画像与结果（含健康描述）以 Fernet 加密落库（任意字符串密钥自动派生）；密钥为空则明文落库并在启动时告警（显式降级，非静默），其中 `APP_ENV=production` 下升级为 **error** 级。由于推荐记录含 `health_status` / `health_issues` 等敏感个人信息，**对外内测与生产部署必须配置该密钥**（配置方式与注意事项见 `docs/docker-deployment.md` 的「推荐记录加密」章节）。加密仅覆盖推荐记录——数据库文件/备份仍需按敏感数据处理。健康信息保留期限由 `RECORD_RETENTION_DAYS` 控制：`0`（默认）永久保留；正数时后端每日清理一次早于该天数的推荐记录（硬删除，仅 `recommendation_records` 表，用户主动保存的画像不受影响）；未运行内嵌调度时可用 `python backend/scripts/purge_expired_records.py --days N [--dry-run]` 手动执行。
 
 **门禁落地方式（OPEN-002 方案 3）**：本地开发保持明文 fail-open（不拒绝启动）；内测与生产的强制由**部署清单的硬性卡点**承担——`docker-compose.yml` 已透传该变量（`.env` 写了但 compose 段缺失 = 容器读不到，仍会明文落库），`.env.example` 含同名条目，`docs/docker-deployment.md` 的「首次部署测试环境」与「生产部署」两份清单各含一步"启动后 grep 日志、命中 PLAINTEXT 即 `exit 1`"的检查。这三处由 `backend/tests/test_compose_policy.py::test_backend_forwards_record_encryption_key` 锁定，防止退回"只在文档里提示一句"。
 
@@ -325,6 +327,8 @@ Cookie 登录用户计入用户级限流（限流优先解析 Bearer 头，其�
 ```
 
 **产品池策略**：以聚合站（慧择、开心保，robots.txt 均允许产品页抓取）为主数据源，深蓝保等测评站与保险公司官网作为补充验证源；中民保险网等 robots.txt 全站禁抓的站点已停用。只有审核（或达标自动）发布后的产品才进入推荐池，产品链接指向真实来源页（`source_type=aggregator` 标"产品页"，官网链接标"官网"）。生产环境不注入演示目录（`SEED_DEMO_PRODUCTS=false`），演示种子仅用于本地开发与 E2E。自动发布有硬性安全门：启发式抽取永不自动发布、占位值/缺失关键字段拦截、模糊匹配（同名系列产品）必须人工确认。系统不提供实时核保或保险公司报价 API，保费区间、健康匹配和保额均为辅助信息，最终以保险公司官方条款、健康告知和核保结果为准。
+
+数据来源边界、存储范围、来源标注与下架流程见 [`docs/data-policy.md`](docs/data-policy.md)（英文版 [`docs/en/data-policy.md`](docs/en/data-policy.md)）。
 
 ## 参与贡献与安全
 
