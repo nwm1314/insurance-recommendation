@@ -40,6 +40,22 @@ is `0`, minor releases may contain breaking changes; they are called out explici
 - README (both languages), the architecture/development/deployment guides and
   `docs/docker-deployment.md` document retention, the language switch and the data policy.
 
+### Verified
+
+On the commit that introduced these changes:
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| Backend tests | `pytest backend/tests -q` (CI) | 319 passed, 1 skipped |
+| Frontend build | `npm run build` (CI) | pass |
+| End-to-end | `npx playwright test` (CI) | 39 passed |
+| Docs | link check + template YAML (CI) | pass |
+| Container build | `docker build` for both images + `docker compose config` (CI) | pass |
+
+The Docker job is new: it is the first automated proof that both images build and that Compose
+interpolation accepts the documented variables. Running the stack itself is still a manual,
+operator step.
+
 ## [0.1.0] - 2026-10-21
 
 First public release. The project had no tags or GitHub Releases before this version, so this
