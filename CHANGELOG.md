@@ -149,6 +149,8 @@ Executed on the release commit before tagging:
 | Frontend build + type check | `npm run build` | pass |
 | End-to-end | `npx playwright test` (ports 3200/8200) | 37 passed |
 | Migration heads | `alembic heads` | single head `20260914_0002` |
+| CI: Backend Tests | GitHub Actions on the release commit | pass |
+| CI: E2E Tests | GitHub Actions on the release commit | pass — 37 tests |
 | Compose deployment | not executed in this environment | BLOCKED — no Docker daemon available |
 
 [Unreleased]: https://github.com/nwm1314/insurance-recommendation/compare/v0.1.0...HEAD
