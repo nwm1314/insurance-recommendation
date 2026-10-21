@@ -65,7 +65,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="智能保险推荐引擎",
     description="Smart Insurance Recommendation System",
-    version="1.0.0",
+    version="0.1.0",
     lifespan=lifespan,
 )
 
@@ -107,4 +107,4 @@ app.include_router(admin_router)
 
 @app.get("/")
 def root():
-    return {"message": "智能保险推荐引擎已启动", "version": "1.0.0"}
+    return {"message": "智能保险推荐引擎已启动", "version": "0.1.0"}
