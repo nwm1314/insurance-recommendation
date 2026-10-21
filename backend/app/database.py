@@ -1,8 +1,33 @@
+from pathlib import Path
+
 from sqlalchemy import create_engine, event, inspect as sa_inspect, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from backend.app.config import settings, BASE_DIR
 
 _IS_SQLITE = "sqlite" in settings.database_url
+
+
+def ensure_sqlite_parent_dir(url: str) -> None:
+    """Create the parent directory of a file-based SQLite database.
+
+    SQLite refuses to create a missing directory, which breaks `alembic upgrade
+    head` and `scripts/seed.py` on a fresh clone: `data/` is git-ignored, so the
+    first command that opens the database fails with "unable to open database
+    file" before the application has a chance to create the directory. This is
+    a no-op for in-memory URLs and for non-SQLite backends.
+    """
+    if not url.startswith("sqlite"):
+        return
+    database = make_url(url).database
+    if not database or database == ":memory:":
+        return
+    parent = Path(database).expanduser().parent
+    if str(parent):
+        parent.mkdir(parents=True, exist_ok=True)
+
+
+ensure_sqlite_parent_dir(settings.database_url)
 
 engine = create_engine(
     settings.database_url,
