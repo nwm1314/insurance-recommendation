@@ -72,7 +72,7 @@ proxy instead of the client.
 git clone https://github.com/nwm1314/insurance-recommendation.git /opt/insurance-prod
 cd /opt/insurance-prod
 git fetch --tags
-git checkout v0.1.0
+git checkout v0.2.0
 cp .env.example .env
 # edit .env per section 2
 ```

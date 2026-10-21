@@ -8,6 +8,10 @@ is `0`, minor releases may contain breaking changes; they are called out explici
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.0] - 2026-10-21
+
 ### Added
 
 - **Recommendation record retention.** `RECORD_RETENTION_DAYS` is now enforced: a positive value
@@ -42,7 +46,7 @@ is `0`, minor releases may contain breaking changes; they are called out explici
 
 ### Verified
 
-On the commit that introduced these changes:
+Executed before tagging `v0.2.0`:
 
 | Gate | Command | Result |
 | --- | --- | --- |
@@ -199,5 +203,6 @@ Executed on the release commit before tagging:
 | CI: E2E Tests | GitHub Actions on the release commit | pass — 37 tests |
 | Compose deployment | not executed in this environment | BLOCKED — no Docker daemon available |
 
-[Unreleased]: https://github.com/nwm1314/insurance-recommendation/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/nwm1314/insurance-recommendation/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/nwm1314/insurance-recommendation/releases/tag/v0.2.0
 [0.1.0]: https://github.com/nwm1314/insurance-recommendation/releases/tag/v0.1.0

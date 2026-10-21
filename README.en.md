@@ -13,7 +13,7 @@ labels stay in Chinese on purpose, so they match the official terms users will c
 Code, configuration and documentation are in English so the logic can be reviewed and reused
 elsewhere.
 
-- **Status:** early public release, `v0.1.0`
+- **Status:** early public release, `v0.2.0`
 - **License:** MIT
 - **Not affiliated with** any insurer, broker or comparison site
 
@@ -479,7 +479,7 @@ Known limitations, stated plainly:
 
 ## 12. Roadmap
 
-The following items are **not implemented** in `v0.1.0` and are listed as intent, not delivery:
+The following items are **not implemented** in `v0.2.0` and are listed as intent, not delivery:
 
 - Optional UI internationalisation (English locale) on top of the Chinese catalog
 - Region/province eligibility once product data exposes it

@@ -25,7 +25,7 @@ PostgreSQL、Redis、Backend 都不暴露宿主机端口，只在 Compose 内部
 
 ```text
 测试服务器：origin/master（或待验证的发布候选 tag）
-生产服务器：release tag（当前首个正式版本为 v0.1.0）
+生产服务器：release tag（当前最新正式版本为 v0.2.0）
 ```
 
 > `develop` 分支已全部合入 `master`，不再作为集成分支使用，请勿从它部署。
@@ -152,7 +152,7 @@ cd /opt
 git clone https://github.com/nwm1314/insurance-recommendation.git insurance-prod
 cd insurance-prod
 git fetch --tags
-git checkout v0.1.0
+git checkout v0.2.0
 cp .env.example .env
 ```
 
