@@ -36,13 +36,12 @@ PREMIUM_BASIS_NOTE = "价格为报价区间下限，实际以核保为准；不�
 def _source_type(product) -> str:
     """official = 承保公司官网域名；aggregator = 聚合站产品详情页。
 
-    已知分层倒挂（REC-005 记录，重构超范围）：推荐 API 层反向依赖
-    scripts/seed.py 的 COMPANY_URLS 常量——脚本层常量被 API 层引用，
-    正确方向应是常量上移到 config 或 models。"""
+    REC-005 已修复：该常量原在 scripts/seed.py，API 层反向依赖脚本；现已上移到
+    app/catalog_sources.py，seed.py 仅做重新导出。"""
     url = getattr(product, "source_url", None) or ""
     if not url:
         return ""
-    from backend.scripts.seed import COMPANY_URLS
+    from backend.app.catalog_sources import COMPANY_URLS
 
     official = COMPANY_URLS.get(getattr(product, "company", "") or "")
     if official and (urlparse(url).netloc or "") == (urlparse(official).netloc or ""):

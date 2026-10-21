@@ -29,6 +29,7 @@ def crawl_interval_minutes() -> int:
 
 
 POOL_MAINTENANCE_JOB_ID = "product_pool_maintenance"
+RETENTION_JOB_ID = "recommendation_record_retention"
 
 
 def run_all_enabled_jobs() -> dict:
@@ -104,6 +105,51 @@ def register_crawl_jobs() -> None:
     )
 
 
+def run_retention_cleanup() -> dict:
+    """Delete recommendation records past RECORD_RETENTION_DAYS.
+
+    REC-006：健康信息保留策略从"仅配置"变为可执行任务。retention_days=0 时
+    本任务不会注册，手动调用也只会返回 enabled=false，不会删除任何数据。
+    """
+    from backend.app.config import settings
+    from backend.app.services.retention import purge_expired_recommendation_records
+
+    db = SessionLocal()
+    try:
+        result = purge_expired_recommendation_records(db, settings.record_retention_days)
+        if result.deleted:
+            logger.info(
+                "retention cleanup deleted %s recommendation record(s) older than %s days (cutoff %s)",
+                result.deleted,
+                result.retention_days,
+                result.cutoff,
+            )
+        return result.as_dict()
+    except Exception:
+        db.rollback()
+        logger.exception("scheduled recommendation record retention failed")
+        return {"error": "retention cleanup failed"}
+    finally:
+        db.close()
+
+
+def register_retention_job() -> None:
+    """Register the daily retention job (no-op unless retention_days > 0)."""
+    from backend.app.config import settings
+
+    if settings.record_retention_days <= 0:
+        return
+    scheduler.add_job(
+        run_retention_cleanup,
+        "interval",
+        hours=24,
+        id=RETENTION_JOB_ID,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
+
 def init_scheduler() -> None:
     """Initialize scheduled tasks: periodic crawl of all enabled jobs.
 
@@ -117,6 +163,14 @@ def init_scheduler() -> None:
     if scheduler.running:
         return
     register_crawl_jobs()
+    # REC-006：仅在配置了保留天数时注册清理任务；0（默认）表示永久保留，
+    # 与引入该配置前的行为一致。
+    if settings.record_retention_days > 0:
+        register_retention_job()
+        logger.info(
+            "recommendation record retention enabled: deleting records older than %s days",
+            settings.record_retention_days,
+        )
     scheduler.start()
 
 

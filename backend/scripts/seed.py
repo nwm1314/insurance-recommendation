@@ -11,6 +11,10 @@ from backend.app.models.product import Product
 from backend.app.models.rule import Rule
 from backend.app.models.benefit import Benefit
 
+# 官网首页 URL 属于应用层常量（REC-005：API 层曾反向依赖本脚本）。
+# 此处重新导出，保证 `from backend.scripts.seed import COMPANY_URLS` 仍然可用。
+from backend.app.catalog_sources import COMPANY_URLS  # noqa: F401
+
 COMPANY_TIERS = {
     # Tier 1: 传统老牌大厂
     "中国平安": 1, "平安人寿": 1, "平安健康": 2, "平安财险": 1,
@@ -24,33 +28,6 @@ COMPANY_TIERS = {
     # Tier 3: 互联网定制/高性价比
     "众安保险": 3, "瑞泰人寿": 3, "和泰人寿": 3, "华贵人寿": 3,
     "信泰人寿": 3, "国富人寿": 3,
-}
-
-# 官网域名均于 2026-08-16 逐一实测可达（HTTP 200）。
-# 演示数据没有真实的产品详情页，source_url 只指向公司官网首页，
-# 不得再拼接编造的产品路径（假路径会被官网返回 404/403）。
-COMPANY_URLS = {
-    "中国平安": "https://www.pingan.com/", "平安人寿": "https://life.pingan.com/",
-    "平安健康": "https://health.pingan.com/", "平安财险": "https://property.pingan.com/",
-    "中国人寿": "https://www.e-chinalife.com/", "太平洋保险": "https://www.cpic.com.cn/",
-    "太平洋人寿": "https://www.cpic.com.cn/", "太保寿险": "https://www.cpic.com.cn/",
-    "人保财险": "https://www.picc.com/", "人保健康": "https://www.picchealth.com/",
-    "人保寿险": "https://www.picclife.com/", "泰康人寿": "https://www.taikang.com/",
-    "泰康在线": "https://www.tk.cn/", "新华保险": "https://www.newchinalife.com/",
-    "阳光人寿": "https://life.sinosig.com/",
-    "同方全球人寿": "https://www.aegonthtf.com/",
-    "中意人寿": "https://www.generalichina.com/",
-    "复星联合健康": "https://www.fosun-uhi.com/",
-    "光大永明": "https://www.sunlife-everbright.com/",
-    "工银安盛": "https://www.icbc-axa.com/",
-    "招商信诺": "https://www.cignacmb.com/",
-    "安盛天平": "https://www.axa.cn/",
-    "众安保险": "https://www.zhongan.com/",
-    "瑞泰人寿": "https://www.oldmutual-chnenergy.com/",
-    "和泰人寿": "https://www.htlife.com/",
-    "华贵人寿": "https://www.huaguilife.cn/",
-    "信泰人寿": "https://www.xintai.com/",
-    "国富人寿": "https://www.e-guofu.com/",
 }
 
 
