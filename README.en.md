@@ -405,9 +405,10 @@ fallback behaviour, prompt-injection hardening, SSRF and robots handling, review
 versioning, freshness labelling, auth/RBAC boundaries, rate limiting, encryption of
 recommendation records, schema-migration parity, and the Compose policy assertions.
 
-CI runs `Backend Tests` and `E2E Tests` on pushes and pull requests to `main`/`master`. Neither
-workflow deploys anything. See [`docs/en/development.md`](docs/en/development.md) for the full
-test map and known environment constraints.
+CI runs `Backend Tests`, `Frontend Build`, `E2E Tests`, `Docs` (relative-link and issue-template
+checks) and, on Docker-related changes, `Docker Build` — which builds both images and validates
+the Compose file without pushing or deploying anything. See
+[`docs/en/development.md`](docs/en/development.md) for the test map and environment constraints.
 
 ## 10. Security & Privacy
 

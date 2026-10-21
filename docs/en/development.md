@@ -242,15 +242,18 @@ interface deterministically.
 
 ## 6. Continuous integration
 
-Two workflows run on pushes and pull requests targeting `main` or `master`:
+Five workflows run on pushes and pull requests targeting `main` or `master`:
 
 | Workflow | Command | Notes |
 | --- | --- | --- |
-| `Backend Tests` | `python -m pytest` in `backend/` | Python 3.11, pip cache |
+| `Backend Tests` | `python -m pytest` in `backend/` | Python 3.12, pip cache |
+| `Frontend Build` | `npm ci && npm run build` in `frontend/` | Type-check plus production build |
 | `E2E Tests` | `E2E_PYTHON=python npm run test:e2e` | Chromium, uploads the Playwright report and test results as artifacts |
+| `Docs` | `python .github/scripts/check_docs_links.py` | Relative links plus issue-template YAML validation |
+| `Docker Build` | `docker build` for both images, then `docker compose config` | Runs only when Docker-related paths change, or on manual dispatch. Builds locally; pushes nothing |
 
-Neither workflow builds images, pushes to a registry, or deploys anywhere. A release tag does
-not trigger a deployment.
+None of them builds and pushes an image to a registry, and none deploys anywhere. A release tag
+does not trigger a deployment.
 
 ## 7. Troubleshooting
 
