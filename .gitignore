@@ -62,3 +62,6 @@ frontend/_*.mjs
 
 # Codex/editor-local workspace metadata
 /.codex/
+
+# Agent workspace notes and scratch state
+/.workbuddy/
